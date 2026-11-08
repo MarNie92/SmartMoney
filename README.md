@@ -11,7 +11,7 @@ orders.**
 |---|---|---|
 | 1 | Repo setup, workspace, config, SQLite schema, docs | done |
 | 2 | Collector + storage, live API test | done |
-| 3 | Scorer with unit tests | open |
+| 3 | Scorer with unit tests | done |
 | 4 | Backtest CLI | open |
 | 5 | Telegram bot | open |
 | 6 | Paper trading incl. inline buttons and stats | open |
@@ -71,8 +71,9 @@ The daemon currently runs the collector: every `poll_interval_seconds` it
 fetches trades of at least `minimum_trade_usd` from `/v2/trades`, stores them,
 enriches wallet (age, markets traded, positions) and market data (Gamma, with
 a derived category), snapshots the order book of the traded token, and every
-10 minutes records resolutions of ended markets. Scoring follows in
-milestone 3.
+10 minutes records resolutions of ended markets. Each new trade is scored
+(0-100) by the scorer; scores at or above `scoring.alert_threshold` are
+logged as `ALERT` (Telegram follows in milestone 5).
 
 Live API tests (network, ignored by default):
 
@@ -113,3 +114,22 @@ automatically at startup. The database file is never committed. Main tables:
 `alerts`, `watchlist`, `orderbook_snapshots`, `price_history`,
 `sim_accounts`, `sim_positions`, `sim_fills`, `sim_equity`, `backtest_runs`,
 `kv_state`.
+
+## Scoring
+
+Each trade gets a 0-100 insider score (capped), stored with a full breakdown
+in `scores.details_json`. Only BUY trades are scored; SELLs get 0. All
+thresholds and weights live in `[scoring]` (see `config.example.toml`).
+
+| Component | Max | Full points | Fades to 0 at |
+|---|---|---|---|
+| Wallet freshness | 25 | younger than 7 days **or** fewer than 5 markets traded | 30 days / 20 markets |
+| Price asymmetry | 25 | entry price <= 5 % | 20 % |
+| Relative size | 20 | trade >= 10 % of the market's 24h volume | 0 % |
+| Concentration | 15 | >= 80 % of the wallet's position value in this market | 20 % |
+| Market type | 15 | factor per category: personnel/corporate/legal 1.0, politics 0.6, other 0.5, sports 0.1, crypto prices 0 | |
+| Cluster bonus | +10 | >= 2 fresh wallets bought the same outcome within 30 min | |
+
+Wallet age is measured at the trade time. The market category is derived
+from Gamma tags and the question text (`smartmoney_core::classify_market`).
+The cluster bonus only sees trades above the collector threshold.

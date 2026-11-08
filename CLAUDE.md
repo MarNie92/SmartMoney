@@ -69,12 +69,22 @@ dashboard is reached only via Tailscale (no public port) with a token.
 
 ## Current status
 
-Milestones 1-2 done. Collector (`smartmoney-collector`): `PolymarketClient`
-(read-only, pacing + backoff), `Collector::poll_once` (dedup via UNIQUE,
-high-water mark in `kv_state` with 300 s overlap, first run 1 page only),
-enrichment (market/wallet cached `enrich_cache_minutes`), order book snapshot
-per trade, resolution check every 10 min. Emits `CollectorEvent` over an mpsc
-channel; the daemon currently only logs them.
-Tests: parser tests on recorded fixtures (`tests/fixtures`), wiremock
-end-to-end test, live tests (`--ignored`).
-Next: milestone 3 – scorer consuming `CollectorEvent::TradeStored`.
+Milestones 1-3 done.
+- Collector (`smartmoney-collector`): `PolymarketClient` (read-only, pacing +
+  backoff), `Collector::poll_once` (dedup via UNIQUE, high-water mark in
+  `kv_state` with 300 s overlap, first run 1 page only), enrichment
+  (market/wallet cached `enrich_cache_minutes`), order book snapshot per
+  trade, resolution check every 10 min. Emits `CollectorEvent`.
+- Scorer (`smartmoney-scorer`): pure `model::score(ScoreInput, cfg)` (shared
+  with the backtest; no I/O, measured at trade time), `Scorer` service
+  consumes `CollectorEvent`, persists `scores` (upsert per trade,
+  `SCORER_VERSION`), backfills unscored trades on start, emits
+  `ScorerEvent::{Scored, MarketResolved}`. Runtime threshold override in
+  `kv_state` key `scoring.alert_threshold` (`effective_threshold`).
+- Daemon pipeline: collector -> scorer -> logger (logs `ALERT` lines). Bot and
+  sim will replace the logger as consumers of `ScorerEvent`.
+- Live observation 2026-11-08: most large trades are sports; asymmetry
+  rarely fires; a fresh wallet going all-in on a thin sports sub-market can
+  reach ~60 without any niche-market signal.
+
+Next: milestone 4 - backtest CLI (reuse `model::score`, no lookahead).
