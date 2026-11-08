@@ -1,0 +1,89 @@
+# SmartMoney example configuration.
+# Copy to config.local.toml (ignored by Git) and adjust.
+# Secrets (Telegram token, dashboard token) are NOT allowed here; set them via
+# environment variables, see .env.example.
+
+[database]
+path = "smartmoney.db"
+
+[collector]
+gamma_api_url = "https://gamma-api.polymarket.com"
+data_api_url = "https://data-api.polymarket.com"
+clob_api_url = "https://clob.polymarket.com"
+minimum_trade_usd = 2000.0
+poll_interval_seconds = 30
+max_requests_per_10s = 50
+backoff_initial_ms = 500
+backoff_max_ms = 60000
+request_timeout_seconds = 20
+enrich_cache_minutes = 60
+
+[scoring]
+alert_threshold = 60.0
+fresh_wallet_max_age_days = 7.0
+fresh_wallet_max_trades = 5
+asymmetry_max_price = 0.20
+relative_size_full_share = 0.10
+cluster_window_minutes = 30
+cluster_min_wallets = 2
+
+[scoring.weights]
+wallet_freshness = 25.0
+price_asymmetry = 25.0
+relative_size = 20.0
+concentration = 15.0
+market_type = 15.0
+cluster_bonus = 10.0
+
+# Fraction (0-1) of the market_type points per category.
+[scoring.category_factors]
+personnel = 1.0
+corporate = 1.0
+legal = 1.0
+politics = 0.6
+other = 0.5
+sports = 0.1
+crypto_price = 0.0
+
+[telegram]
+# Prefer SMARTMONEY_TELEGRAM_ALLOWED_CHAT_IDS; the env var overrides this list.
+allowed_chat_ids = []
+
+[dashboard]
+# Bind to localhost or your Tailscale IP only; never a public interface.
+bind_address = "127.0.0.1:8080"
+
+[simulation]
+starting_balance_usd = 1000.0
+execution_delay_seconds = 30
+fee_bps = 0.0
+manual_strategy = "manual"
+
+[[simulation.strategies]]
+name = "score60"
+min_score = 60.0
+stake = { mode = "fixed", value = 25.0 }
+max_stake_per_market_usd = 100.0
+max_price_move_pct = 30.0
+auto_follow = true
+
+[[simulation.strategies]]
+name = "score70"
+min_score = 70.0
+stake = { mode = "fixed", value = 25.0 }
+max_stake_per_market_usd = 100.0
+max_price_move_pct = 30.0
+auto_follow = true
+
+[[simulation.strategies]]
+name = "score80"
+min_score = 80.0
+stake = { mode = "percent_of_cash", value = 2.5 }
+max_stake_per_market_usd = 100.0
+max_price_move_pct = 30.0
+auto_follow = true
+
+[backtest]
+follow_delays_minutes = [0, 5, 15, 60]
+score_buckets = [20.0, 40.0, 60.0, 80.0, 100.0]
+stake_usd = 100.0
