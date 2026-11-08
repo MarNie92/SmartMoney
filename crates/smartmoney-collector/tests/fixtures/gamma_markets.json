@@ -1,0 +1,62 @@
+[
+  {
+    "id": "6722540",
+    "conditionId": "0x131d29203f63524c6ee473e43036ba6c1c808b24687d5031b6ddab29f822fe66",
+    "question": "Will Bitcoin reach $78,000 November 2-8?",
+    "slug": "will-bitcoin-reach-78k-november-2-8-2026-from-november-5",
+    "tags": [
+      {
+        "id": "21",
+        "label": "Crypto",
+        "slug": "crypto"
+      },
+      {
+        "id": "235",
+        "label": "Bitcoin",
+        "slug": "bitcoin"
+      },
+      {
+        "id": "1312",
+        "label": "Crypto Prices",
+        "slug": "crypto-prices"
+      },
+      {
+        "id": "101757",
+        "label": "Recurring",
+        "slug": "recurring"
+      },
+      {
+        "id": "102134",
+        "label": "Hit Price",
+        "slug": "hit-price"
+      },
+      {
+        "id": "102169",
+        "label": "Hide From New",
+        "slug": "hide-from-new"
+      },
+      {
+        "id": "102264",
+        "label": "Weekly",
+        "slug": "weekly"
+      }
+    ],
+    "volume": "31777.487812",
+    "volumeNum": 31777.487812,
+    "volume24hr": 7326.400767,
+    "endDate": "2026-11-09T05:00:00Z",
+    "closed": false,
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.055\", \"0.945\"]",
+    "clobTokenIds": "[\"103560366571661672480033917541038900285971676873538562415765075754086421022992\", \"114267904121626378551440812029134642674722572686062931369932327796491962545049\"]",
+    "negRisk": false,
+    "active": true,
+    "events": [
+      {
+        "id": "1299077",
+        "slug": "what-price-will-bitcoin-hit-november-2-8-2026",
+        "title": "What price will Bitcoin hit November 2-8?"
+      }
+    ]
+  }
+]
