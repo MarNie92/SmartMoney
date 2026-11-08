@@ -20,10 +20,22 @@ enrich_cache_minutes = 60
 
 [scoring]
 alert_threshold = 60.0
-fresh_wallet_max_age_days = 7.0
-fresh_wallet_max_trades = 5
-asymmetry_max_price = 0.20
+# Wallet freshness: full points if younger than fresh_full_age_days OR fewer
+# than fresh_full_markets distinct markets; linear fade to 0 at the zero values.
+fresh_full_age_days = 7.0
+fresh_zero_age_days = 30.0
+fresh_full_markets = 5
+fresh_zero_markets = 20
+# Price asymmetry: full points at entry price <= 5 %, 0 at >= 20 %.
+asymmetry_full_price = 0.05
+asymmetry_zero_price = 0.20
+# Relative size: full points when the trade is >= 10 % of the 24h volume.
 relative_size_full_share = 0.10
+# Concentration: share of the wallet's position value in this market.
+concentration_zero_share = 0.20
+concentration_full_share = 0.80
+# Cluster bonus: >= cluster_min_wallets fresh wallets buy the same outcome
+# within cluster_window_minutes (only trades above the collector threshold).
 cluster_window_minutes = 30
 cluster_min_wallets = 2
 

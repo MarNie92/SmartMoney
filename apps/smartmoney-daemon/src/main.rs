@@ -6,6 +6,7 @@
 use anyhow::Context;
 use smartmoney_collector::{Collector, CollectorEvent, PolymarketClient};
 use smartmoney_core::Config;
+use smartmoney_scorer::{effective_threshold, Scorer, ScorerEvent};
 use smartmoney_store::Store;
 use tokio::sync::{mpsc, watch};
 use tracing_subscriber::EnvFilter;
@@ -36,39 +37,59 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("database ready, migrations applied");
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    let (event_tx, mut event_rx) = mpsc::channel::<CollectorEvent>(1024);
+    let (collector_tx, collector_rx) = mpsc::channel::<CollectorEvent>(1024);
+    let (scorer_tx, mut scorer_rx) = mpsc::channel::<ScorerEvent>(1024);
 
     let client = PolymarketClient::new(&config.collector).context("building HTTP client")?;
     let collector = Collector::new(
         client,
         store.clone(),
         config.collector.clone(),
-        Some(event_tx),
+        Some(collector_tx),
     );
     let collector_task = tokio::spawn({
         let shutdown = shutdown_rx.clone();
         async move { collector.run(shutdown).await }
     });
 
-    // Placeholder consumer until the scorer (milestone 3) takes over.
+    let scorer = Scorer::new(store.clone(), config.scoring.clone());
+    let scorer_task = tokio::spawn(scorer.run(collector_rx, Some(scorer_tx)));
+
+    // Placeholder consumer until the bot and simulation (milestones 5/6) take over.
     let events_task = tokio::spawn({
         let store = store.clone();
+        let scoring = config.scoring.clone();
         async move {
-            while let Some(event) = event_rx.recv().await {
+            while let Some(event) = scorer_rx.recv().await {
                 match event {
-                    CollectorEvent::TradeStored { trade_id, .. } => {
-                        if let Ok(Some(t)) = store.trade(trade_id).await {
-                            tracing::info!(
-                                wallet = %t.proxy_wallet,
-                                side = %t.side,
-                                usd = format!("{:.0}", t.usdc_value),
-                                price = t.price,
-                                market = t.title.as_deref().unwrap_or("?"),
-                                "large trade"
+                    ScorerEvent::Scored {
+                        score_id, total, ..
+                    } => {
+                        let threshold = effective_threshold(&store, &scoring).await;
+                        if let Ok(Some(s)) = store.scored_trade(score_id).await {
+                            let line = format!(
+                                "score={:.0} [fresh {:.0} asym {:.0} size {:.0} conc {:.0} type {:.0} cluster {:.0}] {} {:.0}$ @ {:.3} {} wallet={}",
+                                total,
+                                s.wallet_freshness,
+                                s.price_asymmetry,
+                                s.relative_size,
+                                s.concentration,
+                                s.market_type,
+                                s.cluster_bonus,
+                                s.side,
+                                s.usdc_value,
+                                s.price,
+                                s.title.as_deref().unwrap_or("?"),
+                                s.proxy_wallet,
                             );
+                            if total >= threshold {
+                                tracing::warn!("ALERT {line}");
+                            } else {
+                                tracing::info!("{line}");
+                            }
                         }
                     }
-                    CollectorEvent::MarketResolved { condition_id } => {
+                    ScorerEvent::MarketResolved { condition_id } => {
                         tracing::info!(%condition_id, "market resolved");
                     }
                 }
@@ -80,8 +101,10 @@ async fn main() -> anyhow::Result<()> {
     tokio::signal::ctrl_c().await?;
     tracing::info!("shutting down");
     let _ = shutdown_tx.send(true);
+    // Collector exit drops its sender, which ends the scorer and the logger.
     let _ = collector_task.await;
-    events_task.abort();
+    let _ = scorer_task.await;
+    let _ = events_task.await;
     store.pool().close().await;
     Ok(())
 }

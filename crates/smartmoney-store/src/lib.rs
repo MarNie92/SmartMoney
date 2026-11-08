@@ -2,8 +2,10 @@
 
 pub mod records;
 mod repo;
+pub mod scores;
 
 pub use records::*;
+pub use scores::{NewScore, ScoredTrade};
 
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::SqlitePool;
