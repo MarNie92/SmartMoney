@@ -1,0 +1,16 @@
+[package]
+name = "smartmoney-store"
+description = "SQLite persistence and migrations for SmartMoney"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+smartmoney-core.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
