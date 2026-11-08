@@ -131,12 +131,27 @@ pub struct ScoringConfig {
     /// Alerts are sent for scores at or above this value.
     pub alert_threshold: f64,
     pub weights: ScoreWeights,
-    pub fresh_wallet_max_age_days: f64,
-    pub fresh_wallet_max_trades: u32,
-    /// Entries at or below this outcome price count as asymmetric bets.
-    pub asymmetry_max_price: f64,
+    /// Wallet freshness: full points below this age, fading to 0 at
+    /// `fresh_zero_age_days`.
+    pub fresh_full_age_days: f64,
+    pub fresh_zero_age_days: f64,
+    /// Wallet freshness: full points with fewer distinct markets traded than
+    /// this, fading to 0 at `fresh_zero_markets`.
+    pub fresh_full_markets: u32,
+    pub fresh_zero_markets: u32,
+    /// Price asymmetry: full points at or below this entry price, fading to 0
+    /// at `asymmetry_zero_price`.
+    pub asymmetry_full_price: f64,
+    pub asymmetry_zero_price: f64,
     /// Share of the 24h market volume that earns the full relative-size score.
     pub relative_size_full_share: f64,
+    /// Concentration: share of the wallet's position value in this market;
+    /// 0 points at or below `concentration_zero_share`, full at or above
+    /// `concentration_full_share`.
+    pub concentration_zero_share: f64,
+    pub concentration_full_share: f64,
+    /// Cluster bonus: at least `cluster_min_wallets` fresh wallets (including
+    /// this one) bought the same outcome within this window.
     pub cluster_window_minutes: u64,
     pub cluster_min_wallets: u32,
     /// Fraction (0-1) of `market_type` points per category.
@@ -157,10 +172,15 @@ impl Default for ScoringConfig {
         Self {
             alert_threshold: 60.0,
             weights: ScoreWeights::default(),
-            fresh_wallet_max_age_days: 7.0,
-            fresh_wallet_max_trades: 5,
-            asymmetry_max_price: 0.20,
+            fresh_full_age_days: 7.0,
+            fresh_zero_age_days: 30.0,
+            fresh_full_markets: 5,
+            fresh_zero_markets: 20,
+            asymmetry_full_price: 0.05,
+            asymmetry_zero_price: 0.20,
             relative_size_full_share: 0.10,
+            concentration_zero_share: 0.20,
+            concentration_full_share: 0.80,
             cluster_window_minutes: 30,
             cluster_min_wallets: 2,
             category_factors,
@@ -356,8 +376,43 @@ impl Config {
         if !(0.0..=100.0).contains(&self.scoring.alert_threshold) {
             return invalid("scoring.alert_threshold must be within 0..=100");
         }
-        if !(0.0..=1.0).contains(&self.scoring.asymmetry_max_price) {
-            return invalid("scoring.asymmetry_max_price must be within 0..=1");
+        let s = &self.scoring;
+        if !(0.0 <= s.asymmetry_full_price
+            && s.asymmetry_full_price < s.asymmetry_zero_price
+            && s.asymmetry_zero_price <= 1.0)
+        {
+            return invalid("scoring: need 0 <= asymmetry_full_price < asymmetry_zero_price <= 1");
+        }
+        if !(0.0 <= s.fresh_full_age_days && s.fresh_full_age_days < s.fresh_zero_age_days) {
+            return invalid("scoring: need 0 <= fresh_full_age_days < fresh_zero_age_days");
+        }
+        if s.fresh_full_markets >= s.fresh_zero_markets {
+            return invalid("scoring: need fresh_full_markets < fresh_zero_markets");
+        }
+        if !(0.0 <= s.concentration_zero_share
+            && s.concentration_zero_share < s.concentration_full_share
+            && s.concentration_full_share <= 1.0)
+        {
+            return invalid(
+                "scoring: need 0 <= concentration_zero_share < concentration_full_share <= 1",
+            );
+        }
+        if s.relative_size_full_share <= 0.0 {
+            return invalid("scoring.relative_size_full_share must be > 0");
+        }
+        let w = &s.weights;
+        if [
+            w.wallet_freshness,
+            w.price_asymmetry,
+            w.relative_size,
+            w.concentration,
+            w.market_type,
+            w.cluster_bonus,
+        ]
+        .iter()
+        .any(|v| *v < 0.0)
+        {
+            return invalid("scoring.weights must be >= 0");
         }
         if self
             .scoring
