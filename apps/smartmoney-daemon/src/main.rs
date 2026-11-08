@@ -52,6 +52,27 @@ async fn main() -> anyhow::Result<()> {
         async move { collector.run(shutdown).await }
     });
 
+    // Validate the dashboard bind policy before starting anything else.
+    smartmoney_web::resolve_bind(&config.dashboard).context("dashboard configuration")?;
+    let web_state = smartmoney_web::AppState {
+        store: store.clone(),
+        scoring: config.scoring.clone(),
+        token: config
+            .dashboard
+            .token
+            .as_ref()
+            .map(|t| t.expose().to_owned()),
+    };
+    let web_task = tokio::spawn({
+        let shutdown = shutdown_rx.clone();
+        let cfg = config.dashboard.clone();
+        async move {
+            if let Err(e) = smartmoney_web::serve(&cfg, web_state, shutdown).await {
+                tracing::error!(error = %e, "dashboard stopped");
+            }
+        }
+    });
+
     let scorer = Scorer::new(store.clone(), config.scoring.clone());
     let scorer_task = tokio::spawn(scorer.run(collector_rx, Some(scorer_tx)));
 
@@ -102,6 +123,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("shutting down");
     let _ = shutdown_tx.send(true);
     // Collector exit drops its sender, which ends the scorer and the logger.
+    let _ = web_task.await;
     let _ = collector_task.await;
     let _ = scorer_task.await;
     let _ = events_task.await;

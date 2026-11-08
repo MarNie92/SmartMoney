@@ -11,6 +11,7 @@ smartmoney-core.workspace = true
 smartmoney-store.workspace = true
 smartmoney-collector.workspace = true
 smartmoney-scorer.workspace = true
+smartmoney-web.workspace = true
 anyhow.workspace = true
 dotenvy.workspace = true
 tokio.workspace = true
