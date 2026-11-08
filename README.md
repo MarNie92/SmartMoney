@@ -75,6 +75,23 @@ a derived category), snapshots the order book of the traded token, and every
 (0-100) by the scorer; scores at or above `scoring.alert_threshold` are
 logged as `ALERT` (Telegram follows in milestone 5).
 
+## Dashboard
+
+The daemon serves a mobile-first dashboard (German UI) at
+`dashboard.bind_address` (default `http://127.0.0.1:8080`):
+
+- **Feed**: latest scored trades, auto-refreshing every 20 s, filter by
+  minimum score, alerts highlighted. Each row shows a breakdown strip: one
+  segment per score component, width = weight, fill = points. Tap a row for
+  the plain-language reasons and links.
+- **Wallet** (`/wallet/<address>`): age, markets traded, positions and all
+  scored trades of the wallet.
+
+Access control: without `SMARTMONEY_DASHBOARD_TOKEN` the dashboard only binds
+to loopback addresses (the daemon refuses to start otherwise). With a token,
+open `http://<host>:8080/?token=<token>` once; it sets an HttpOnly cookie.
+Use a token of letters and digits only.
+
 Live API tests (network, ignored by default):
 
 ```sh

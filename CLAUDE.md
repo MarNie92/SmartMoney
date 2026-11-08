@@ -83,6 +83,14 @@ Milestones 1-3 done.
   `kv_state` key `scoring.alert_threshold` (`effective_threshold`).
 - Daemon pipeline: collector -> scorer -> logger (logs `ALERT` lines). Bot and
   sim will replace the logger as consumers of `ScorerEvent`.
+- Mini dashboard pulled forward from milestone 7 (user wanted visual
+  feedback): `smartmoney-web` with axum + maud (server-rendered), feed with
+  breakdown strip + live refresh (`/live` fragment), wallet page, token
+  middleware (cookie `sm_token` or `?token=`), loopback-only without token.
+  German UI copy. Design: cool fog palette + dark mode, Archivo (Google
+  Fonts, condensed for scores), amber for alerts. Visual check via headless
+  Edge screenshots (Edge enforces ~500 px min width; use an iframe for 390 px).
+  Milestone 7 still adds watchlist, simulation, backtest views.
 - Live observation 2026-11-08: most large trades are sports; asymmetry
   rarely fires; a fresh wallet going all-in on a thin sports sub-market can
   reach ~60 without any niche-market signal.

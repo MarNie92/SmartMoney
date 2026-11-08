@@ -3,6 +3,7 @@
 pub mod records;
 mod repo;
 pub mod scores;
+mod stats;
 
 pub use records::*;
 pub use scores::{NewScore, ScoredTrade};
