@@ -1,5 +1,10 @@
 //! SQLite persistence for SmartMoney.
 
+pub mod records;
+mod repo;
+
+pub use records::*;
+
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::SqlitePool;
 use std::path::Path;
