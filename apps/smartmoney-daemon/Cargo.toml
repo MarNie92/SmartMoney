@@ -1,0 +1,16 @@
+[package]
+name = "smartmoney-daemon"
+description = "SmartMoney daemon: runs collector, scorer, sim, bot and web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+smartmoney-core.workspace = true
+smartmoney-store.workspace = true
+anyhow.workspace = true
+dotenvy.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
