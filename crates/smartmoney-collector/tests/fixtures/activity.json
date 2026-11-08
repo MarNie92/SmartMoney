@@ -1,0 +1,33 @@
+{
+  "data": [
+    {
+      "proxy_wallet": "0x3e3d362468e8676196bc374203ec242f40f5d674",
+      "timestamp": 1772913587,
+      "condition_id": "0xf94145fa5716d4bfd2948ce5eef2954dcb560516ccbba5e8b68059027e431cdc",
+      "type": "TRADE",
+      "size": 126.1345,
+      "usdc_size": 125.629962,
+      "transaction_hash": "0x1a44aaf0364a87f5a04f041f051630954b94efdd535c9c2d58854944a07873a9",
+      "price": 0.996,
+      "token_id": "17667954885432047474600988169826078422913327586493371051607749430874729004890",
+      "side": "BUY",
+      "outcome_index": 1,
+      "title": "US forces enter Iran by March 7?",
+      "slug": "us-forces-enter-iran-by-march-7",
+      "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/us-forces-enter-iran-by-L_p5JkCpvr0I.jpg",
+      "event_slug": "us-forces-enter-iran-by",
+      "outcome": "No",
+      "name": "Navigator77",
+      "pseudonym": "Kind-Scenery",
+      "bio": "",
+      "profile_image": "",
+      "profile_image_optimized": ""
+    }
+  ],
+  "pagination": {
+    "limit": 2,
+    "offset": 0,
+    "has_more": true,
+    "next_cursor": "eyJkYXRhIjp7InR5cGUiOiJhY3Rpdml0eSIsInBhcmFtcyI6eyJsIjoyLCJ0cyI6MTc3Mjk1MzU1Nywic3EiOiI4MzkxNjc2MjAwMDkxMTY5NTEiLCJkIjoyLCJkaXIiOiJBU0MifX0sInNpZyI6IjA3YTNmYzc2YTM4OGU4YTAxYjZlYTdkMjI2OWMzYWY1In0"
+  }
+}

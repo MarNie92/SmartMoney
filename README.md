@@ -10,7 +10,7 @@ orders.**
 | Milestone | Content | Status |
 |---|---|---|
 | 1 | Repo setup, workspace, config, SQLite schema, docs | done |
-| 2 | Collector + storage, live API test | open |
+| 2 | Collector + storage, live API test | done |
 | 3 | Scorer with unit tests | open |
 | 4 | Backtest CLI | open |
 | 5 | Telegram bot | open |
@@ -67,8 +67,18 @@ cargo run -p smartmoney-daemon          # start the daemon
 cargo run -p smartmoney-backtest        # backtest CLI (milestone 4)
 ```
 
-Currently the daemon loads the config, opens/migrates the database and waits
-for Ctrl+C. Services are added milestone by milestone.
+The daemon currently runs the collector: every `poll_interval_seconds` it
+fetches trades of at least `minimum_trade_usd` from `/v2/trades`, stores them,
+enriches wallet (age, markets traded, positions) and market data (Gamma, with
+a derived category), snapshots the order book of the traded token, and every
+10 minutes records resolutions of ended markets. Scoring follows in
+milestone 3.
+
+Live API tests (network, ignored by default):
+
+```sh
+cargo test -p smartmoney-collector --test live_api -- --ignored --nocapture
+```
 
 ## Workspace
 
