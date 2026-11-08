@@ -1,0 +1,25 @@
+# Build output
+/target/
+
+# Databases (never commit)
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+config.local.toml
+
+# Logs
+*.log
+logs/
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

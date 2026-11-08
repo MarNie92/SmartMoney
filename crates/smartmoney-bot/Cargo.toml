@@ -1,0 +1,10 @@
+[package]
+name = "smartmoney-bot"
+description = "Telegram alerts and allowlisted bot commands for SmartMoney"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+smartmoney-core.workspace = true

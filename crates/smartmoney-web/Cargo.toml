@@ -1,0 +1,10 @@
+[package]
+name = "smartmoney-web"
+description = "Private mobile-first web dashboard for SmartMoney"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+smartmoney-core.workspace = true

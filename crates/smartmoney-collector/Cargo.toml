@@ -1,0 +1,10 @@
+[package]
+name = "smartmoney-collector"
+description = "Polymarket data collection and enrichment for SmartMoney"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+smartmoney-core.workspace = true

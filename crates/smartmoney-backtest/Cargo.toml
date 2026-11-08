@@ -1,0 +1,10 @@
+[package]
+name = "smartmoney-backtest"
+description = "Backtest CLI replaying resolved Polymarket markets for SmartMoney"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+smartmoney-core.workspace = true
