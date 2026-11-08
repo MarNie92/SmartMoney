@@ -41,6 +41,29 @@ const SPORTS_TAGS: &[&str] = &[
     "wnba",
     "olympics",
     "games",
+    "counter-strike",
+    "cs2",
+    "csgo",
+    "dota",
+    "dota-2",
+    "league-of-legends",
+    "lol",
+    "valorant",
+    "rocket-league",
+];
+
+/// Question patterns of sports / esports match markets, used as a fallback
+/// when tags are missing.
+const SPORTS_PATTERNS: &[&str] = &[
+    " vs. ",
+    " vs ",
+    "o/u ",
+    "spread:",
+    "(bo3)",
+    "(bo5)",
+    "(bo1)",
+    "1st half",
+    "both teams",
 ];
 const LEGAL_TAGS: &[&str] = &[
     "courts",
@@ -176,7 +199,17 @@ pub fn classify_market(tags: &[String], question: &str) -> MarketCategory {
         // Crypto but not a price market (e.g. token launches, listings).
         return MarketCategory::Corporate;
     }
+    if has_word(SPORTS_PATTERNS) || is_match_winner_question(&q) {
+        return MarketCategory::Sports;
+    }
     MarketCategory::Other
+}
+
+/// "Will <team> win on 2026-11-08?" style daily match markets.
+fn is_match_winner_question(q: &str) -> bool {
+    q.split(" win on ").nth(1).is_some_and(|rest| {
+        rest.len() >= 10 && rest[..10].chars().all(|c| c.is_ascii_digit() || c == '-')
+    })
 }
 
 #[cfg(test)]
@@ -248,9 +281,39 @@ mod tests {
             classify_market(&tags(&["pop-culture"]), "Will Taylor Swift tour Asia?"),
             MarketCategory::Other
         );
+        // Elections with "vs." keep their politics tag.
+        assert_eq!(
+            classify_market(
+                &tags(&["elections"]),
+                "Smith vs. Jones: who wins the Senate seat?"
+            ),
+            MarketCategory::Politics
+        );
         assert_eq!(
             classify_market(&tags(&["crypto"]), "Will Polymarket launch a token?"),
             MarketCategory::Corporate
+        );
+    }
+
+    #[test]
+    fn untagged_match_markets_are_sports() {
+        // Live examples from 2026-11-08 without usable tags.
+        for q in [
+            "Counter-Strike: 6yuBoJlbl vs 9INE (BO3) - ESL Challenger League Europe Cup #11",
+            "Manchester United FC vs. Aston Villa FC: 1st Half O/U 3.5",
+            "Spread: Rams (-5.5)",
+            "Will Manchester United FC win on 2026-11-08?",
+        ] {
+            assert_eq!(classify_market(&[], q), MarketCategory::Sports, "{q}");
+        }
+        assert_eq!(
+            classify_market(&tags(&["counter-strike"]), "Team A wins map 1?"),
+            MarketCategory::Sports
+        );
+        // A non-date "win on" stays other.
+        assert_eq!(
+            classify_market(&[], "Will the movie win on opening weekend?"),
+            MarketCategory::Other
         );
     }
 
