@@ -36,25 +36,31 @@ dashboard is reached only via Tailscale (no public port) with a token.
 - Check docs.polymarket.com before implementing API calls; ask the user
   before assuming API fields the docs do not clarify.
 
-## Polymarket API notes (verified 2026-11-08)
+## Polymarket API notes (verified against live responses 2026-11-08)
 
-- Data API v1 is retired (2026-11-02). Use `/v2/*`, responses are
-  snake_case, cursor pagination (`cursor` / `pagination.next_cursor`),
-  `offset` is a 400.
+- Data API v1 is retired (2026-11-02). Use `/v2/*`: snake_case fields,
+  cursor pagination (`cursor` / `pagination.next_cursor`), `offset` is a 400.
 - `/v2/trades`: `size` = shares, `price` = USDC/share, `timestamp` = epoch
-  seconds; `filter_type=CASH&filter_amount=2000` filters by USDC value;
-  `condition` (not `market`) filters by condition id.
-- `/v2/user-stats`: `trades` = distinct markets traded, `join_date` may be
-  null. Earliest activity: `/v2/activity?user=..&sort_direction=ASC&start=1`.
-- `/v2/positions?user=`: positions with `current_value`, `total_cost_usdc`.
-- Resolution: `/v2/resolutions?condition=` → `status`, `payouts`
-  (micro-USDC per share). Gamma has no documented winner field.
-- Gamma `outcomes`, `outcomePrices`, `clobTokenIds` are typed as strings
-  (probably JSON-encoded arrays – verify against live data).
-- CLOB `/book`: price/size are strings; `/prices-history` `t` unit is
-  undocumented (likely seconds – verify).
+  seconds, newest first. `filter_type=CASH&filter_amount=2000` filters by
+  USDC value (verified). `outcome_index` 999 = unlabeled.
+- `/v2/user-stats`: `trades` = distinct markets traded, `join_date` (s, may
+  be null), `all_time_pnl.trade_count` = fills. Fallback for wallet age:
+  `/v2/activity?user=..&sort_direction=ASC&start=1&limit=1`.
+- `/v2/positions?user=`: `current_value`, `total_cost_usdc` (USDC).
+- `/v2/resolutions?condition=`: `status` ("resolved" when final),
+  `payouts` in micro-USDC per share (`[0, 1000000]` = outcome 1 won).
+- Gamma `/markets?condition_ids=..&include_tag=true&closed=any`:
+  `outcomes`, `outcomePrices`, `clobTokenIds` are JSON arrays inside strings;
+  `category` is empty, so the category is derived from tag slugs + question
+  (`smartmoney_core::classify_market`). Dates: RFC 3339 or
+  `2026-11-08 16:36:53.76+00`.
+- CLOB `/book`: price/size are strings, **bids ascending and asks descending
+  (best last)**, `timestamp` in ms. We normalize to best-first. `/midpoint`
+  returns `{"mid": ".."}`. `/prices-history` `t` is epoch seconds.
 - Rate limits (per 10 s): Data v2 general 800, `/v2/trades` 300; Gamma
-  `/markets` 300; CLOB `/book` 1500. Clients get 429 + `Retry-After`.
+  `/markets` 300; CLOB `/book` 1500; 429 + `Retry-After`. Our client paces
+  to `max_requests_per_10s` (default 50) and retries 429/5xx with backoff.
+- Volume: ~7 trades >= $2,000 per minute (2026-11-08), mostly sports.
 
 ## Environment notes
 
@@ -63,7 +69,12 @@ dashboard is reached only via Tailscale (no public port) with a token.
 
 ## Current status
 
-Milestone 1 done: workspace, config (TOML + env, validation, tests), SQLite
-schema + `Store` (migrations, kv_state), daemon bootstrap, README.
-Next: milestone 2 – collector (`/v2/trades` polling, enrichment, rate
-limiting/backoff) and persistence.
+Milestones 1-2 done. Collector (`smartmoney-collector`): `PolymarketClient`
+(read-only, pacing + backoff), `Collector::poll_once` (dedup via UNIQUE,
+high-water mark in `kv_state` with 300 s overlap, first run 1 page only),
+enrichment (market/wallet cached `enrich_cache_minutes`), order book snapshot
+per trade, resolution check every 10 min. Emits `CollectorEvent` over an mpsc
+channel; the daemon currently only logs them.
+Tests: parser tests on recorded fixtures (`tests/fixtures`), wiremock
+end-to-end test, live tests (`--ignored`).
+Next: milestone 3 – scorer consuming `CollectorEvent::TradeStored`.
