@@ -9,6 +9,6 @@ pub mod secret;
 pub mod types;
 
 pub use classify::classify_market;
-pub use config::{Config, ConfigError};
+pub use config::{Config, ConfigError, ScoreMode};
 pub use secret::Secret;
 pub use types::{MarketCategory, Side};
