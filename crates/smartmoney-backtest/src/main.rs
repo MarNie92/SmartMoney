@@ -103,6 +103,17 @@ async fn main() -> anyhow::Result<()> {
             "{}",
             report::table(
                 &format!(
+                    "   Insider-Signatur (frisch = bis {:.0} Tage, Außenseiter = Kurs bis {:.0}¢)",
+                    cfg.scoring.fresh_full_age_days,
+                    cfg.scoring.asymmetry_zero_price * 100.0
+                ),
+                &r.signature
+            )
+        );
+        print!(
+            "{}",
+            report::table(
+                &format!(
                     "   nach Kategorie (Score ab {:.0})",
                     cfg.scoring.alert_threshold
                 ),

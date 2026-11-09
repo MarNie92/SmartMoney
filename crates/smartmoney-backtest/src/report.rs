@@ -20,6 +20,9 @@ pub struct FollowStats {
 pub struct GroupStats {
     pub label: String,
     pub n: usize,
+    /// Distinct markets and wallets (small numbers = correlated sample).
+    pub markets: usize,
+    pub wallets: usize,
     /// Average payout of the bought outcome (1 = won).
     pub hit_rate: Option<f64>,
     /// Average entry price = market-implied win probability.
@@ -56,6 +59,16 @@ pub fn group_stats(label: &str, rows: &[&Evaluated], delays: &[u64], stake: f64)
     GroupStats {
         label: label.to_owned(),
         n: rows.len(),
+        markets: rows
+            .iter()
+            .map(|r| r.condition_id.as_str())
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        wallets: rows
+            .iter()
+            .map(|r| r.wallet.as_str())
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
         hit_rate,
         avg_price,
         edge: hit_rate.zip(avg_price).map(|(h, p)| h - p),
@@ -136,8 +149,8 @@ pub fn table(title: &str, groups: &[GroupStats]) -> String {
         .map(|g| g.follow.iter().map(|f| f.delay_minutes).collect())
         .unwrap_or_default();
     let mut header = format!(
-        "{:<11} {:>6} {:>8} {:>8} {:>8} {:>10}",
-        "Bucket", "n", "Treffer", "Ø Kurs", "Edge", "ROI Ins."
+        "{:<11} {:>6} {:>7} {:>8} {:>8} {:>8} {:>8} {:>10}",
+        "Bucket", "n", "Märkte", "Wallets", "Treffer", "Ø Kurs", "Edge", "ROI Ins."
     );
     for d in &delays {
         let _ = write!(header, " {:>10}", format!("ROI +{d}m"));
@@ -149,9 +162,11 @@ pub fn table(title: &str, groups: &[GroupStats]) -> String {
     let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
     for g in groups {
         let mut line = format!(
-            "{:<11} {:>6} {:>8} {:>8} {:>8} {:>10}",
+            "{:<11} {:>6} {:>7} {:>8} {:>8} {:>8} {:>8} {:>10}",
             g.label,
             g.n,
+            g.markets,
+            g.wallets,
             pct(g.hit_rate),
             pct(g.avg_price),
             signed_pct(g.edge),
@@ -188,6 +203,7 @@ mod tests {
             control: false,
             price,
             usd: 1000.0,
+            wallet_age_days: None,
             payout,
             follow: vec![follow_roi.map(|roi| FollowResult {
                 entry: price,
@@ -207,6 +223,8 @@ mod tests {
         let refs: Vec<&Evaluated> = rows.iter().collect();
         let g = group_stats("x", &refs, &[15], 100.0);
         assert_eq!(g.n, 2);
+        assert_eq!(g.markets, 1);
+        assert_eq!(g.wallets, 1);
         assert!((g.hit_rate.unwrap() - 0.5).abs() < 1e-9);
         assert!((g.edge.unwrap() - 0.4).abs() < 1e-9);
         assert!((g.insider_roi.unwrap() - 4.0).abs() < 1e-9); // (9 + -1) / 2

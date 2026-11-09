@@ -117,5 +117,6 @@ lookback_days = 180
 # payout-filter variant (shares x $1).
 min_candidate_usd = 500.0
 variant_min_payout_usd = 15000.0
+variant_min_payout_price = 0.02
 wallet_history_days = 30
 requests_per_10s = 100

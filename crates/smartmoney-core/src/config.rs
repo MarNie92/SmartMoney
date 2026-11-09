@@ -324,6 +324,8 @@ pub struct BacktestConfig {
     /// Payout-filter variant: also keep trades whose potential payout
     /// (shares x $1) reaches this value.
     pub variant_min_payout_usd: f64,
+    /// Minimum price for the payout path (excludes dust buys).
+    pub variant_min_payout_price: f64,
     /// Wallet trade history window used to approximate concentration.
     pub wallet_history_days: u64,
     pub requests_per_10s: u32,
@@ -356,6 +358,7 @@ impl Default for BacktestConfig {
             lookback_days: 180,
             min_candidate_usd: 500.0,
             variant_min_payout_usd: 15_000.0,
+            variant_min_payout_price: 0.02,
             wallet_history_days: 30,
             requests_per_10s: 100,
         }

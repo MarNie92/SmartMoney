@@ -59,14 +59,20 @@ pub struct Variant {
     pub name: String,
     pub mode: ScoreMode,
     pub min_usd: f64,
-    /// Also accept trades with at least this potential payout (shares x $1).
+    /// Also accept trades with at least this potential payout (shares x $1)
+    /// at a price of at least `min_payout_price` (excludes dust buys of
+    /// practically decided outcomes).
     pub min_payout: Option<f64>,
+    pub min_payout_price: f64,
 }
 
 impl Variant {
     pub fn accepts(&self, t: &HistTrade) -> bool {
         t.side == Side::Buy
-            && (t.usd() >= self.min_usd || self.min_payout.is_some_and(|p| t.size >= p))
+            && (t.usd() >= self.min_usd
+                || self
+                    .min_payout
+                    .is_some_and(|p| t.size >= p && t.price >= self.min_payout_price))
     }
 }
 
@@ -90,6 +96,8 @@ pub struct Evaluated {
     pub control: bool,
     pub price: f64,
     pub usd: f64,
+    /// Wallet age at trade time in days, if known.
+    pub wallet_age_days: Option<f64>,
     /// Payout per share of the bought outcome (1 = won, 0 = lost).
     pub payout: f64,
     /// One entry per configured follow delay; `None` = no fill possible.
@@ -177,6 +185,9 @@ pub fn evaluate(
                 control: case.control,
                 price: t.price,
                 usd: t.usd(),
+                wallet_age_days: info
+                    .created_at
+                    .map(|c| ((t.timestamp - c) as f64 / DAY as f64).max(0.0)),
                 payout,
                 follow,
             });
@@ -364,6 +375,7 @@ mod tests {
             mode: ScoreMode::Additive,
             min_usd: 2000.0,
             min_payout: None,
+            min_payout_price: 0.0,
         }
     }
 
@@ -492,7 +504,10 @@ mod tests {
             mode: ScoreMode::Multiplicative,
             min_usd: 2000.0,
             min_payout: Some(15_000.0),
+            min_payout_price: 0.02,
         };
+        let dust = trade("w", Side::Buy, "yes", 0.001, 20.0, T0); // 20k shares at 0.1¢
+        assert!(!payout.accepts(&dust));
         assert!(!additive().accepts(&small_longshot));
         assert!(payout.accepts(&small_longshot));
         assert!(!payout.accepts(&sell));

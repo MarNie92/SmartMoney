@@ -24,21 +24,25 @@ pub fn default_variants(cfg: &Config) -> Vec<Variant> {
             mode: ScoreMode::Additive,
             min_usd,
             min_payout: None,
+            min_payout_price: 0.0,
         },
         Variant {
             name: format!("B: Marktart als Multiplikator (ab ${min_usd:.0})"),
             mode: ScoreMode::Multiplicative,
             min_usd,
             min_payout: None,
+            min_payout_price: 0.0,
         },
         Variant {
             name: format!(
-                "C: Multiplikator + Auszahlungsfilter (ab ${min_usd:.0} oder Auszahlung ab ${:.0})",
-                cfg.backtest.variant_min_payout_usd
+                "C: Multiplikator + Auszahlungsfilter (ab ${min_usd:.0} oder Auszahlung ab ${:.0} bei Kurs ab {:.0}¢)",
+                cfg.backtest.variant_min_payout_usd,
+                cfg.backtest.variant_min_payout_price * 100.0
             ),
             mode: ScoreMode::Multiplicative,
             min_usd,
             min_payout: Some(cfg.backtest.variant_min_payout_usd),
+            min_payout_price: cfg.backtest.variant_min_payout_price,
         },
     ]
 }
@@ -48,6 +52,8 @@ pub struct VariantResult {
     pub name: String,
     pub by_score: Vec<GroupStats>,
     pub by_category: Vec<GroupStats>,
+    /// The classic insider signature: fresh wallet buying a longshot.
+    pub signature: Vec<GroupStats>,
 }
 
 pub fn run_variants(data: &dataset::Dataset, cfg: &Config) -> Vec<VariantResult> {
@@ -70,6 +76,7 @@ pub fn run_variants(data: &dataset::Dataset, cfg: &Config) -> Vec<VariantResult>
                     &bt.follow_delays_minutes,
                     bt.stake_usd,
                 ),
+                signature: signature_groups(&rows, cfg),
                 by_category: report::by_category(
                     &rows,
                     cfg.scoring.alert_threshold,
@@ -78,6 +85,41 @@ pub fn run_variants(data: &dataset::Dataset, cfg: &Config) -> Vec<VariantResult>
                 ),
                 name: v.name,
             }
+        })
+        .collect()
+}
+
+type RowFilter<'a> = Box<dyn Fn(&Evaluated) -> bool + 'a>;
+
+/// Compare fresh wallets buying longshots with everything else.
+pub fn signature_groups(rows: &[Evaluated], cfg: &Config) -> Vec<GroupStats> {
+    let bt = &cfg.backtest;
+    let fresh_days = cfg.scoring.fresh_full_age_days;
+    let longshot = cfg.scoring.asymmetry_zero_price;
+    let is_fresh = |r: &Evaluated| r.wallet_age_days.is_some_and(|d| d <= fresh_days);
+    let groups: [(&str, RowFilter<'_>); 4] = [
+        (
+            "Frisch+Außenseiter",
+            Box::new(|r| is_fresh(r) && r.price <= longshot),
+        ),
+        (
+            "Frisch, Rest",
+            Box::new(|r| is_fresh(r) && r.price > longshot),
+        ),
+        (
+            "Alt+Außenseiter",
+            Box::new(|r| !is_fresh(r) && r.price <= longshot),
+        ),
+        (
+            "Alt, Rest",
+            Box::new(|r| !is_fresh(r) && r.price > longshot),
+        ),
+    ];
+    groups
+        .iter()
+        .map(|(label, pred)| {
+            let members: Vec<&Evaluated> = rows.iter().filter(|r| pred(r)).collect();
+            report::group_stats(label, &members, &bt.follow_delays_minutes, bt.stake_usd)
         })
         .collect()
 }
