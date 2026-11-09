@@ -2,14 +2,15 @@
 //! Read-only: this client never places orders.
 
 use crate::api::{
-    Activity, DataTrade, GammaMarket, Midpoint, OrderBook, Page, Position, PricesHistory,
-    ResolutionRow, UserStats, UserStatsResponse,
+    Activity, DataTrade, GammaEventWithMarkets, GammaMarket, Midpoint, OrderBook, Page, Position,
+    PricesHistory, ResolutionRow, UserStats, UserStatsResponse,
 };
 use crate::ratelimit::{Backoff, RateLimiter};
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use smartmoney_core::config::CollectorConfig;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -47,6 +48,25 @@ pub struct PolymarketClient {
     gamma_url: String,
     data_url: String,
     clob_url: String,
+    /// When set, every response is cached on disk by URL (for immutable
+    /// historical data in the backtest).
+    cache_dir: Option<PathBuf>,
+}
+
+/// FNV-1a 64-bit hash, stable across runs (used for cache file names).
+fn fnv1a(data: &str) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in data.as_bytes() {
+        hash ^= u64::from(*b);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+fn cache_key(url: &str, query: &[(&str, String)]) -> String {
+    let mut parts: Vec<String> = query.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    parts.sort();
+    format!("{:016x}", fnv1a(&format!("{url}?{}", parts.join("&"))))
 }
 
 impl PolymarketClient {
@@ -69,11 +89,48 @@ impl PolymarketClient {
             gamma_url: cfg.gamma_api_url.trim_end_matches('/').to_owned(),
             data_url: cfg.data_api_url.trim_end_matches('/').to_owned(),
             clob_url: cfg.clob_api_url.trim_end_matches('/').to_owned(),
+            cache_dir: None,
         })
     }
 
-    /// GET with pacing, retries on 429 / 5xx / network errors.
+    /// Cache all responses in `dir` (created if missing). Only use this for
+    /// data that does not change, such as closed markets.
+    pub fn with_cache(mut self, dir: impl Into<PathBuf>) -> std::io::Result<Self> {
+        let dir = dir.into();
+        std::fs::create_dir_all(&dir)?;
+        self.cache_dir = Some(dir);
+        Ok(self)
+    }
+
+    /// Override the request budget (requests per 10 seconds).
+    pub fn with_rate(mut self, max_per_10s: u32) -> Self {
+        self.limiter = Arc::new(RateLimiter::new(max_per_10s, Duration::from_secs(10)));
+        self
+    }
+
     async fn get_value(
+        &self,
+        url: &str,
+        query: &[(&str, String)],
+    ) -> Result<serde_json::Value, ApiError> {
+        let Some(dir) = &self.cache_dir else {
+            return self.fetch_value(url, query).await;
+        };
+        let path = dir.join(format!("{}.json", cache_key(url, query)));
+        if let Ok(bytes) = tokio::fs::read(&path).await {
+            if let Ok(value) = serde_json::from_slice(&bytes) {
+                return Ok(value);
+            }
+        }
+        let value = self.fetch_value(url, query).await?;
+        if let Err(e) = tokio::fs::write(&path, value.to_string()).await {
+            tracing::warn!(error = %e, path = %path.display(), "could not write cache file");
+        }
+        Ok(value)
+    }
+
+    /// GET with pacing, retries on 429 / 5xx / network errors.
+    async fn fetch_value(
         &self,
         url: &str,
         query: &[(&str, String)],
@@ -298,5 +355,76 @@ impl PolymarketClient {
             )
             .await?
             .value)
+    }
+    /// Closed events with a tag (Gamma `/events`), most recently ended first.
+    /// `end_date_max` is an RFC 3339 timestamp.
+    pub async fn closed_events(
+        &self,
+        tag_slug: &str,
+        end_date_max: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<GammaEventWithMarkets>, ApiError> {
+        let url = format!("{}/events", self.gamma_url);
+        let raw = self
+            .get_value(
+                &url,
+                &[
+                    ("tag_slug", tag_slug.to_owned()),
+                    ("closed", "true".to_owned()),
+                    ("order", "endDate".to_owned()),
+                    ("ascending", "false".to_owned()),
+                    ("end_date_max", end_date_max.to_owned()),
+                    ("offset", offset.to_string()),
+                    ("limit", limit.to_string()),
+                ],
+            )
+            .await?;
+        let events = raw.as_array().cloned().unwrap_or_default();
+        Ok(events
+            .iter()
+            .filter_map(|e| GammaEventWithMarkets::from_value(e).ok())
+            .collect())
+    }
+
+    /// One page (newest first, up to 1000) of all taker trades in a market.
+    pub async fn market_trades_page(
+        &self,
+        condition_id: &str,
+        cursor: Option<&str>,
+    ) -> Result<Page<DataTrade>, ApiError> {
+        let mut query = vec![
+            ("condition", condition_id.to_owned()),
+            ("limit", "1000".to_owned()),
+        ];
+        if let Some(c) = cursor {
+            query.push(("cursor", c.to_owned()));
+        }
+        Ok(self
+            .get(&format!("{}/v2/trades", self.data_url), &query)
+            .await?
+            .value)
+    }
+
+    /// Up to 1000 most recent BUY trades of a wallet within `[start, end]`.
+    pub async fn user_buys(
+        &self,
+        user: &str,
+        start: i64,
+        end: i64,
+    ) -> Result<Vec<DataTrade>, ApiError> {
+        let res: WithRaw<Page<DataTrade>> = self
+            .get(
+                &format!("{}/v2/trades", self.data_url),
+                &[
+                    ("user", user.to_owned()),
+                    ("side", "BUY".to_owned()),
+                    ("start", start.max(1).to_string()),
+                    ("end", end.to_string()),
+                    ("limit", "1000".to_owned()),
+                ],
+            )
+            .await?;
+        Ok(res.value.data)
     }
 }

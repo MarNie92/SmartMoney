@@ -241,6 +241,55 @@ pub struct GammaEvent {
     pub tags: Vec<GammaTag>,
 }
 
+/// Gamma event from `/events` with its nested markets. Nested markets carry
+/// no tags; the event's tags are attached to each market.
+#[derive(Debug, Clone)]
+pub struct GammaEventWithMarkets {
+    pub slug: Option<String>,
+    pub tags: Vec<GammaTag>,
+    pub end_date: Option<String>,
+    /// Markets that parsed; malformed ones are skipped.
+    pub markets: Vec<GammaMarket>,
+}
+
+impl GammaEventWithMarkets {
+    pub fn from_value(v: &serde_json::Value) -> Result<Self, serde_json::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Raw {
+            #[serde(default)]
+            slug: Option<String>,
+            #[serde(default, deserialize_with = "null_as_default")]
+            tags: Vec<GammaTag>,
+            #[serde(default)]
+            end_date: Option<String>,
+            #[serde(default, deserialize_with = "null_as_default")]
+            markets: Vec<serde_json::Value>,
+        }
+        let raw = Raw::deserialize(v)?;
+        let markets = raw
+            .markets
+            .iter()
+            .filter_map(|m| GammaMarket::deserialize(m).ok())
+            .map(|mut m| {
+                if m.events.is_empty() {
+                    m.events.push(GammaEvent {
+                        slug: raw.slug.clone(),
+                        tags: raw.tags.clone(),
+                    });
+                }
+                m
+            })
+            .collect();
+        Ok(Self {
+            slug: raw.slug,
+            tags: raw.tags,
+            end_date: raw.end_date,
+            markets,
+        })
+    }
+}
+
 impl GammaMarket {
     pub fn tag_slugs(&self) -> Vec<String> {
         let mut slugs: Vec<String> = self
@@ -479,6 +528,27 @@ mod tests {
             Some("what-price-will-bitcoin-hit-november-2-8-2026")
         );
         assert!(!r.closed);
+    }
+
+    #[test]
+    fn event_markets_inherit_event_tags() {
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{"slug":"next-ceo","endDate":"2026-10-01T00:00:00Z",
+                "tags":[{"slug":"business","label":"Business"}],
+                "markets":[
+                  {"id":"1","conditionId":"0xa","question":"Will X be the next CEO?",
+                   "outcomes":"[\"Yes\",\"No\"]","clobTokenIds":"[\"1\",\"2\"]","closed":true},
+                  {"broken":true}
+                ]}"#,
+        )
+        .unwrap();
+        let e = GammaEventWithMarkets::from_value(&v).unwrap();
+        assert_eq!(e.markets.len(), 1, "malformed market skipped");
+        let m = e.markets[0].clone();
+        assert_eq!(m.tag_slugs(), vec!["business".to_string()]);
+        let r = m.into_record(None, 0);
+        assert_eq!(r.event_slug.as_deref(), Some("next-ceo"));
+        assert_eq!(r.category, MarketCategory::Personnel);
     }
 
     #[test]
