@@ -8,3 +8,17 @@ rust-version.workspace = true
 
 [dependencies]
 smartmoney-core.workspace = true
+smartmoney-store.workspace = true
+smartmoney-collector.workspace = true
+smartmoney-scorer.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+dotenvy.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
