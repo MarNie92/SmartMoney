@@ -95,4 +95,22 @@ Milestones 1-3 done.
   rarely fires; a fresh wallet going all-in on a thin sports sub-market can
   reach ~60 without any niche-market signal.
 
-Next: milestone 4 - backtest CLI (reuse `model::score`, no lookahead).
+- Backtest (`smartmoney-backtest`, milestone 4): samples ended markets per
+  Gamma tag via `/events?tag_slug=..&closed=true&end_date_max=..`, loads all
+  trades per market (`/v2/trades?condition=`), wallet facts (`user-stats`
+  join_date, buys of the last 30 days), evaluates variants A (additive),
+  B (`ScoreMode::Multiplicative`), C (B + payout filter with min price 2¢).
+  Pure `engine::evaluate` with no-lookahead tests. Responses cached in
+  `backtest_cache/` (rerun from cache ~20 s).
+  Resolution: `/v2/resolutions` often has no `payouts` (UMA question rows
+  only carry an undocumented `price`); fallback = Gamma final prices when
+  both report resolved and prices are exactly 0/1 or 0.5 (0 mismatches in
+  76 markets having both).
+- Backtest result 2026-11-09 (521 markets, 375k trades, 638 trades >= $2k):
+  big trades are mostly favorites (avg 89¢), hit rate == price (no edge
+  overall); score buckets not monotonic; A 60-80 bucket +8% edge but from
+  only 11 markets (politics: 6) -> not robust; B yields no score >= 60;
+  zero "fresh wallet + longshot" trades; payout filter without a price
+  floor only adds 0.1¢ dust buys. Follow slippage is small (~+1% at 15 min).
+  Conclusion: no evidence of a usable signal in a random recent sample;
+  insider cases are rare, a targeted niche sample is the next step.

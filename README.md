@@ -12,7 +12,7 @@ orders.**
 | 1 | Repo setup, workspace, config, SQLite schema, docs | done |
 | 2 | Collector + storage, live API test | done |
 | 3 | Scorer with unit tests | done |
-| 4 | Backtest CLI | open |
+| 4 | Backtest CLI | done |
 | 5 | Telegram bot | open |
 | 6 | Paper trading incl. inline buttons and stats | open |
 | 7 | Web dashboard | open |
@@ -150,3 +150,35 @@ thresholds and weights live in `[scoring]` (see `config.example.toml`).
 Wallet age is measured at the trade time. The market category is derived
 from Gamma tags and the question text (`smartmoney_core::classify_market`).
 The cluster bonus only sees trades above the collector threshold.
+
+## Backtest
+
+```sh
+cargo run --release -p smartmoney-backtest                # default sample
+cargo run --release -p smartmoney-backtest -- --markets-per-niche-tag 20 --json results.json
+```
+
+The backtest samples recently ended markets per Gamma tag (niche tags plus
+sports/crypto as control group, see `[backtest]`), fetches **all** trades of
+each market and scores every candidate BUY with only the data available at
+its timestamp:
+
+- 24h volume = trades of the market in the 24 hours up to the trade,
+- concentration = the wallet's buys in the previous `wallet_history_days`,
+- cluster = earlier buyers of the same outcome only,
+- wallet age from `join_date` (the number of markets traded is only known
+  as of today and is left out).
+
+Outcomes come from `/v2/resolutions` payouts; when a resolved market has no
+payouts there, Gamma's final prices are used if they are exactly 0/1 (both
+sources must report "resolved"; disagreements are counted and printed).
+
+It compares three variants: **A** the current additive score with the
+$2,000 filter, **B** market type as multiplier, **C** B plus trades with a
+potential payout of at least `variant_min_payout_usd`. Per score bucket it
+prints the hit rate, the average entry price (market-implied probability),
+the edge (hit rate minus price), the insider's return, and the return of
+following X minutes later at the next real trade (+ slippage, fees).
+
+API responses are cached in `backtest_cache/` (ignored by Git), so reruns
+with other settings are fast. Each run is stored in `backtest_runs`.
