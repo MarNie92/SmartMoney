@@ -188,6 +188,64 @@ pub fn table(title: &str, groups: &[GroupStats]) -> String {
     s
 }
 
+/// Table for the smart-money persistence test.
+pub fn smart_table(r: &crate::smart::SmartReport) -> String {
+    let mut s = String::new();
+    let delays: Vec<u64> = r
+        .groups
+        .first()
+        .map(|g| g.copy.iter().map(|c| c.delay_minutes).collect())
+        .unwrap_or_default();
+    let mut header = format!(
+        "{:<8} {:>8} {:>9} {:>9} {:>20} {:>10} {:>8} {:>7}",
+        "Gruppe",
+        "Wallets",
+        "Edge P1",
+        "Edge P2",
+        "95%-Bereich P2",
+        "P2 $-gew.",
+        "Trades",
+        "Märkte"
+    );
+    for d in &delays {
+        let _ = write!(header, " {:>15}", format!("Kopie +{d}m"));
+    }
+    let _ = writeln!(s, "{header}");
+    let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
+    let n = r.groups.len();
+    for g in &r.groups {
+        let label = match g.rank {
+            1 => "Top".to_owned(),
+            r if r == n => "Flop".to_owned(),
+            r => format!("{r}."),
+        };
+        let mut line = format!(
+            "{:<8} {:>8} {:>9} {:>9} {:>20} {:>10} {:>8} {:>7}",
+            label,
+            g.wallets,
+            signed_pct(Some(g.p1_edge_avg)),
+            signed_pct(Some(g.p2_edge_avg)),
+            format!(
+                "{} bis {}",
+                signed_pct(Some(g.p2_edge_lo)),
+                signed_pct(Some(g.p2_edge_hi))
+            ),
+            signed_pct(Some(g.p2_edge_usd_weighted)),
+            g.p2_trades,
+            g.p2_markets,
+        );
+        for c in &g.copy {
+            let cell = match c.avg_roi {
+                Some(v) => format!("{:+.1}% ({}/{}M)", v * 100.0, c.filled, c.markets),
+                None => "–".into(),
+            };
+            let _ = write!(line, " {cell:>15}");
+        }
+        let _ = writeln!(s, "{line}");
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
