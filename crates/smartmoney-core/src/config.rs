@@ -99,6 +99,18 @@ impl Default for CollectorConfig {
     }
 }
 
+/// How the market-type component is combined with the others.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScoreMode {
+    /// All components are added (market type is one of them).
+    #[default]
+    Additive,
+    /// The other components form a 0-100 base that is multiplied by the
+    /// category factor; concentration only counts for wallets with history.
+    Multiplicative,
+}
+
 /// Maximum points per score component. The sum of all components except the
 /// cluster bonus forms the 0-100 base score; the final score is capped at 100.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +142,8 @@ impl Default for ScoreWeights {
 pub struct ScoringConfig {
     /// Alerts are sent for scores at or above this value.
     pub alert_threshold: f64,
+    /// How the market type enters the score.
+    pub mode: ScoreMode,
     pub weights: ScoreWeights,
     /// Wallet freshness: full points below this age, fading to 0 at
     /// `fresh_zero_age_days`.
@@ -171,6 +185,7 @@ impl Default for ScoringConfig {
         ]);
         Self {
             alert_threshold: 60.0,
+            mode: ScoreMode::Additive,
             weights: ScoreWeights::default(),
             fresh_full_age_days: 7.0,
             fresh_zero_age_days: 30.0,
@@ -291,6 +306,29 @@ pub struct BacktestConfig {
     /// Upper bounds of the score buckets, e.g. [40, 60, 80, 100].
     pub score_buckets: Vec<f64>,
     pub stake_usd: f64,
+    /// Price penalty on follow entries (basis points of the price).
+    pub slippage_bps: f64,
+    /// Gamma tag slugs of niche markets to sample.
+    pub niche_tags: Vec<String>,
+    /// Gamma tag slugs of comparison markets (low insider value).
+    pub control_tags: Vec<String>,
+    pub markets_per_niche_tag: usize,
+    pub markets_per_control_tag: usize,
+    pub min_market_volume_usd: f64,
+    /// Markets with more trades are skipped (keeps fetches bounded).
+    pub max_trades_per_market: usize,
+    /// Only markets that ended within this many days.
+    pub lookback_days: u64,
+    /// Smallest trade fetched as a candidate (USDC).
+    pub min_candidate_usd: f64,
+    /// Payout-filter variant: also keep trades whose potential payout
+    /// (shares x $1) reaches this value.
+    pub variant_min_payout_usd: f64,
+    /// Minimum price for the payout path (excludes dust buys).
+    pub variant_min_payout_price: f64,
+    /// Wallet trade history window used to approximate concentration.
+    pub wallet_history_days: u64,
+    pub requests_per_10s: u32,
 }
 
 impl Default for BacktestConfig {
@@ -299,6 +337,30 @@ impl Default for BacktestConfig {
             follow_delays_minutes: vec![0, 5, 15, 60],
             score_buckets: vec![20.0, 40.0, 60.0, 80.0, 100.0],
             stake_usd: 100.0,
+            slippage_bps: 50.0,
+            niche_tags: [
+                "politics",
+                "business",
+                "tech",
+                "courts",
+                "world",
+                "economy",
+                "ai",
+                "pop-culture",
+            ]
+            .map(String::from)
+            .to_vec(),
+            control_tags: ["sports", "crypto"].map(String::from).to_vec(),
+            markets_per_niche_tag: 60,
+            markets_per_control_tag: 40,
+            min_market_volume_usd: 5000.0,
+            max_trades_per_market: 20_000,
+            lookback_days: 180,
+            min_candidate_usd: 500.0,
+            variant_min_payout_usd: 15_000.0,
+            variant_min_payout_price: 0.02,
+            wallet_history_days: 30,
+            requests_per_10s: 100,
         }
     }
 }

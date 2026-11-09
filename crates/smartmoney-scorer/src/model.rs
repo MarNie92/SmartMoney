@@ -7,7 +7,7 @@
 
 use serde::Serialize;
 use serde_json::{json, Value};
-use smartmoney_core::config::ScoringConfig;
+use smartmoney_core::config::{ScoreMode, ScoringConfig};
 use smartmoney_core::{MarketCategory, Side};
 use smartmoney_store::{MarketRecord, PositionRecord, WalletRecord};
 
@@ -186,15 +186,46 @@ pub fn score(input: &ScoreInput<'_>, cfg: &ScoringConfig) -> ScoreBreakdown {
     // Cluster bonus.
     let cluster = input.fresh_cluster_wallets >= cfg.cluster_min_wallets as usize;
 
-    let wallet_freshness = round2(w.wallet_freshness * fresh_factor);
-    let price_asymmetry = round2(w.price_asymmetry * asym_factor);
-    let relative_size = round2(w.relative_size * size_factor);
-    let concentration = round2(w.concentration * conc_factor);
-    let market_type = round2(w.market_type * type_factor);
-    let cluster_bonus = if cluster {
-        round2(w.cluster_bonus)
-    } else {
-        0.0
+    let cluster_points = if cluster { w.cluster_bonus } else { 0.0 };
+    let (
+        wallet_freshness,
+        price_asymmetry,
+        relative_size,
+        concentration,
+        market_type,
+        cluster_bonus,
+    ) = match cfg.mode {
+        ScoreMode::Additive => (
+            round2(w.wallet_freshness * fresh_factor),
+            round2(w.price_asymmetry * asym_factor),
+            round2(w.relative_size * size_factor),
+            round2(w.concentration * conc_factor),
+            round2(w.market_type * type_factor),
+            round2(cluster_points),
+        ),
+        ScoreMode::Multiplicative => {
+            // A brand-new wallet is always "concentrated"; only count
+            // concentration to the extent the wallet has history.
+            let conc_effective = conc_factor * (1.0 - fresh_factor);
+            let max_base = w.wallet_freshness
+                + w.price_asymmetry
+                + w.relative_size
+                + w.concentration
+                + w.cluster_bonus;
+            let scale = if max_base > 0.0 {
+                100.0 / max_base * type_factor
+            } else {
+                0.0
+            };
+            (
+                round2(w.wallet_freshness * fresh_factor * scale),
+                round2(w.price_asymmetry * asym_factor * scale),
+                round2(w.relative_size * size_factor * scale),
+                round2(w.concentration * conc_effective * scale),
+                0.0,
+                round2(cluster_points * scale),
+            )
+        }
     };
     let total = round2(
         (wallet_freshness
@@ -216,6 +247,7 @@ pub fn score(input: &ScoreInput<'_>, cfg: &ScoringConfig) -> ScoreBreakdown {
         cluster_bonus,
         details: json!({
             "version": SCORER_VERSION,
+            "mode": cfg.mode,
             "wallet_freshness": { "factor": round2(fresh_factor), "inputs": fresh_details },
             "price_asymmetry": { "factor": round2(asym_factor), "price": t.price },
             "relative_size": {
@@ -517,6 +549,83 @@ mod tests {
         ] {
             assert!(s.details.get(key).is_some(), "missing {key}");
         }
+    }
+
+    fn multiplicative() -> ScoringConfig {
+        ScoringConfig {
+            mode: ScoreMode::Multiplicative,
+            ..cfg()
+        }
+    }
+
+    fn run_with(
+        c: &ScoringConfig,
+        t: &TradeFacts,
+        w: Option<&WalletRecord>,
+        m: Option<&MarketRecord>,
+        p: &[PositionRecord],
+        cluster: usize,
+    ) -> ScoreBreakdown {
+        score(
+            &ScoreInput {
+                trade: t,
+                wallet: w,
+                market: m,
+                positions: p,
+                fresh_cluster_wallets: cluster,
+            },
+            c,
+        )
+    }
+
+    #[test]
+    fn multiplicative_caps_sports_and_ignores_new_wallet_concentration() {
+        let c = multiplicative();
+        // The live false positive: new wallet, all-in, big share of a thin
+        // sports sub-market, no price asymmetry.
+        let w = wallet(Some(2.0), Some(1));
+        let sports = market(MarketCategory::Sports, Some(20_000.0));
+        let s = run_with(&c, &trade(0.6, 5_400.0), Some(&w), Some(&sports), &[], 0);
+        assert_eq!(
+            s.concentration, 0.0,
+            "fresh wallet: no concentration points"
+        );
+        assert_eq!(s.market_type, 0.0);
+        // (25 + 20) / 95 * 100 * 0.1
+        assert!((s.total - 4.74).abs() < 0.02, "total {}", s.total);
+        // Same trade in additive mode is an alert.
+        assert!(run(&trade(0.6, 5_400.0), Some(&w), Some(&sports), &[], 0).total >= 60.0);
+    }
+
+    #[test]
+    fn multiplicative_keeps_textbook_insider_at_maximum() {
+        let c = multiplicative();
+        let w = wallet(Some(1.0), Some(1));
+        let m = market(MarketCategory::Personnel, Some(10_000.0));
+        let s = run_with(&c, &trade(0.03, 5_000.0), Some(&w), Some(&m), &[], 2);
+        // fresh 25 + asym 25 + size 20 + conc 0 + cluster 10 = 80 of 95.
+        assert!((s.total - 84.21).abs() < 0.02, "total {}", s.total);
+        let sum = s.wallet_freshness
+            + s.price_asymmetry
+            + s.relative_size
+            + s.concentration
+            + s.cluster_bonus;
+        assert!((sum - s.total).abs() < 0.05, "components add up to total");
+    }
+
+    #[test]
+    fn multiplicative_counts_concentration_for_established_wallets() {
+        let c = multiplicative();
+        let w = wallet(Some(400.0), Some(300));
+        let m = market(MarketCategory::Legal, None);
+        let s = run_with(&c, &trade(0.5, 5_000.0), Some(&w), Some(&m), &[], 0);
+        // Only concentration: 15 / 95 * 100.
+        assert!(
+            (s.concentration - 15.79).abs() < 0.02,
+            "{}",
+            s.concentration
+        );
+        assert_eq!(s.details["mode"], "multiplicative");
     }
 
     #[test]

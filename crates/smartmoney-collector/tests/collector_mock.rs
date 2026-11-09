@@ -170,3 +170,30 @@ async fn client_errors_are_not_retried() {
     let client = PolymarketClient::new(&cfg).unwrap();
     assert!(client.book("123").await.is_err());
 }
+
+#[tokio::test]
+async fn cache_serves_repeated_requests_from_disk() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/book"))
+        .respond_with(json("book.json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let cfg = CollectorConfig {
+        clob_api_url: server.uri(),
+        max_requests_per_10s: 10_000,
+        ..Default::default()
+    };
+    let dir = std::env::temp_dir().join(format!("sm-cache-test-{}", std::process::id()));
+    let client = PolymarketClient::new(&cfg)
+        .unwrap()
+        .with_cache(&dir)
+        .unwrap();
+    let first = client.book("123").await.unwrap().to_snapshot(0);
+    let second = client.book("123").await.unwrap().to_snapshot(0);
+    assert_eq!(first, second);
+    // Different parameters are a different cache entry (and would hit the
+    // server again); the mock's expect(1) verifies a single fetch above.
+    let _ = std::fs::remove_dir_all(&dir);
+}
