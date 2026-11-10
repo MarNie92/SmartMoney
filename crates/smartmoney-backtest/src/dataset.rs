@@ -2,14 +2,14 @@
 
 use crate::engine::{candidate_wallets, HistTrade, MarketCase, WalletInfo};
 use futures::stream::{self, StreamExt};
+use smartmoney_collector::api::parse_datetime;
 use smartmoney_collector::{ApiError, PolymarketClient};
 use smartmoney_core::config::BacktestConfig;
-use smartmoney_core::Side;
+use smartmoney_core::{MarketCategory, Side};
 use std::collections::{HashMap, HashSet};
 
 const DAY: i64 = 86_400;
 const EVENTS_PAGE: usize = 50;
-const MAX_EVENT_PAGES: usize = 20;
 const CONCURRENCY: usize = 8;
 
 #[derive(Debug, Default, Clone, serde::Serialize)]
@@ -28,6 +28,27 @@ pub struct LoadStats {
     pub wallets_failed: usize,
 }
 
+/// What to load.
+#[derive(Debug, Clone)]
+pub struct LoadOptions {
+    /// Keep only markets of these categories (`None` = all).
+    pub categories: Option<HashSet<MarketCategory>>,
+    /// Fetch wallet facts (age, buy history) for candidate trades.
+    pub wallets: bool,
+    /// Event pages (50 events each) to scan per tag.
+    pub max_event_pages: usize,
+}
+
+impl Default for LoadOptions {
+    fn default() -> Self {
+        Self {
+            categories: None,
+            wallets: true,
+            max_event_pages: 20,
+        }
+    }
+}
+
 struct Selected {
     record: smartmoney_store::MarketRecord,
     control: bool,
@@ -37,6 +58,7 @@ struct Selected {
 async fn select_markets(
     client: &PolymarketClient,
     bt: &BacktestConfig,
+    opts: &LoadOptions,
     now: i64,
 ) -> Result<Vec<Selected>, ApiError> {
     // Day granularity keeps the cache key stable for a day.
@@ -59,7 +81,7 @@ async fn select_markets(
     let mut out = Vec::new();
     for (tag, quota, control) in groups {
         let mut taken = 0;
-        'pages: for page in 0..MAX_EVENT_PAGES {
+        'pages: for page in 0..opts.max_event_pages {
             let events = client
                 .closed_events(tag, &end_max, page * EVENTS_PAGE, EVENTS_PAGE)
                 .await?;
@@ -67,6 +89,15 @@ async fn select_markets(
                 break;
             }
             for event in events {
+                // Events come newest end date first; stop once past the window.
+                if event
+                    .end_date
+                    .as_deref()
+                    .and_then(parse_datetime)
+                    .is_some_and(|e| e < oldest_end)
+                {
+                    break 'pages;
+                }
                 for m in event.markets {
                     if taken >= quota {
                         break 'pages;
@@ -77,7 +108,11 @@ async fn select_markets(
                         && record.clob_token_ids.len() >= 2
                         && record.volume_usd.unwrap_or(0.0) >= bt.min_market_volume_usd
                         && ended >= oldest_end
-                        && ended <= now;
+                        && ended <= now
+                        && opts
+                            .categories
+                            .as_ref()
+                            .is_none_or(|c| c.contains(&record.category));
                     if usable && seen.insert(record.condition_id.clone()) {
                         out.push(Selected { record, control });
                         taken += 1;
@@ -221,10 +256,11 @@ pub struct Dataset {
 pub async fn load(
     client: &PolymarketClient,
     bt: &BacktestConfig,
+    opts: &LoadOptions,
     now: i64,
 ) -> Result<Dataset, ApiError> {
     let mut stats = LoadStats::default();
-    let selected = select_markets(client, bt, now).await?;
+    let selected = select_markets(client, bt, opts, now).await?;
     stats.markets_selected = selected.len();
     tracing::info!(
         markets = selected.len(),
@@ -265,7 +301,11 @@ pub async fn load(
     cases.sort_by(|a, b| a.market.condition_id.cmp(&b.market.condition_id));
     stats.markets_used = cases.len();
 
-    let candidates = candidate_wallets(&cases, bt);
+    let candidates = if opts.wallets {
+        candidate_wallets(&cases, bt)
+    } else {
+        HashMap::new()
+    };
     tracing::info!(wallets = candidates.len(), "loading wallet facts");
     let mut wallets = HashMap::new();
     let mut results = stream::iter(candidates)

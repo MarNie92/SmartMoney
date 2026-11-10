@@ -1,79 +1,98 @@
-//! `smartmoney-backtest`: replay resolved markets and compare score variants.
+//! `smartmoney-backtest`: replay resolved markets.
+//!
+//! - `score` (default): compare score variants on a broad market sample.
+//! - `insider`: targeted test on personnel / corporate / legal markets.
+//! - `smart`: do wallets that beat the market keep doing so?
 
 use anyhow::Context;
-use clap::Parser;
-use smartmoney_backtest::{dataset, report, run_variants};
+use clap::{Args as ClapArgs, Parser, Subcommand};
+use smartmoney_backtest::dataset::{self, Dataset, LoadOptions};
+use smartmoney_backtest::smart::{self, SmartConfig};
+use smartmoney_backtest::{
+    insider_variants, report, run_given_variants, run_variants, VariantResult,
+};
 use smartmoney_collector::PolymarketClient;
-use smartmoney_core::Config;
+use smartmoney_core::{Config, MarketCategory};
 use smartmoney_store::Store;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
+
+const DAY: i64 = 86_400;
 
 #[derive(Debug, Parser)]
 #[command(
     name = "smartmoney-backtest",
-    about = "Replays resolved Polymarket markets and reports how high-score trades performed"
+    about = "Replays resolved Polymarket markets and reports how signals performed"
 )]
-struct Args {
-    /// Markets per niche tag (overrides config).
-    #[arg(long)]
-    markets_per_niche_tag: Option<usize>,
-    /// Markets per control tag (overrides config).
-    #[arg(long)]
-    markets_per_control_tag: Option<usize>,
-    /// Only markets that ended within this many days (overrides config).
-    #[arg(long)]
-    lookback_days: Option<u64>,
+struct Cli {
+    #[command(flatten)]
+    common: Common,
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Debug, ClapArgs)]
+struct Common {
     /// Requests per 10 seconds (overrides config).
-    #[arg(long)]
+    #[arg(long, global = true)]
     rps10: Option<u32>,
     /// Directory for cached API responses.
-    #[arg(long, default_value = "backtest_cache")]
+    #[arg(long, global = true, default_value = "backtest_cache")]
     cache_dir: PathBuf,
     /// Also write the results as JSON to this file.
-    #[arg(long)]
+    #[arg(long, global = true)]
     json: Option<PathBuf>,
     /// Do not store the run in the database.
-    #[arg(long)]
+    #[arg(long, global = true)]
     no_save: bool,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let _ = dotenvy::dotenv();
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .with_writer(std::io::stderr)
-        .init();
-    let args = Args::parse();
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Compare score variants on a broad sample (default).
+    Score {
+        #[arg(long)]
+        markets_per_niche_tag: Option<usize>,
+        #[arg(long)]
+        markets_per_control_tag: Option<usize>,
+        #[arg(long)]
+        lookback_days: Option<u64>,
+    },
+    /// Targeted insider test: personnel, corporate and legal markets only.
+    Insider {
+        #[arg(long, default_value_t = 150)]
+        markets_per_tag: usize,
+        #[arg(long, default_value_t = 365)]
+        lookback_days: u64,
+        /// Minimum trade size (USDC) for scored trades.
+        #[arg(long, default_value_t = 500.0)]
+        min_usd: f64,
+    },
+    /// Smart-money persistence: rank wallets in period 1, test in period 2.
+    Smart {
+        #[arg(long, default_value_t = 150)]
+        markets_per_tag: usize,
+        #[arg(long, default_value_t = 365)]
+        lookback_days: u64,
+        /// Period split, in days before today (default: half the lookback).
+        #[arg(long)]
+        split_days_ago: Option<i64>,
+        #[arg(long, default_value_t = 20)]
+        p1_min_trades: usize,
+        #[arg(long, default_value_t = 5)]
+        p1_min_markets: usize,
+        #[arg(long, default_value_t = 10)]
+        p2_min_trades: usize,
+        /// Copy test: follow period-2 buys of at least this size.
+        #[arg(long, default_value_t = 100.0)]
+        copy_min_usd: f64,
+    },
+}
 
-    let mut cfg = Config::load().context("loading configuration")?;
-    if let Some(n) = args.markets_per_niche_tag {
-        cfg.backtest.markets_per_niche_tag = n;
-    }
-    if let Some(n) = args.markets_per_control_tag {
-        cfg.backtest.markets_per_control_tag = n;
-    }
-    if let Some(d) = args.lookback_days {
-        cfg.backtest.lookback_days = d;
-    }
-    if let Some(r) = args.rps10 {
-        cfg.backtest.requests_per_10s = r;
-    }
-
-    let client = PolymarketClient::new(&cfg.collector)?
-        .with_rate(cfg.backtest.requests_per_10s)
-        .with_cache(&args.cache_dir)
-        .with_context(|| format!("creating cache dir {}", args.cache_dir.display()))?;
-    let now = chrono::Utc::now().timestamp();
-    let data = dataset::load(&client, &cfg.backtest, now).await?;
-    let results = run_variants(&data, &cfg);
-
-    let s = &data.stats;
+fn print_load_stats(s: &dataset::LoadStats) {
     println!(
-        "SmartMoney Backtest: {} Märkte ausgewertet ({} ausgewählt, {} ohne Auflösung, {} zu viele Trades, {} Fehler), {} Trades, {} Wallets.",
+        "{} Märkte ausgewertet ({} ausgewählt, {} ohne Auflösung, {} zu viele Trades, {} Fehler), {} Trades, {} Wallets.",
         s.markets_used,
         s.markets_selected,
         s.markets_unresolved,
@@ -88,13 +107,16 @@ async fn main() -> anyhow::Result<()> {
             s.payouts_from_gamma, s.payout_source_mismatches
         );
     }
+}
+
+fn print_variants(cfg: &Config, results: &[VariantResult], category_title: &str) {
     println!(
         "Treffer = Anteil gewonnener Käufe. Ø Kurs = vom Markt eingepreiste Gewinnchance. \
          Edge = Treffer - Ø Kurs (> 0: besser als der Markt). ROI +Xm = Rendite beim Nachziehen X Minuten später \
          zum nächsten echten Trade (+{:.0} bps Slippage), in Klammern die Anzahl möglicher Einstiege.",
         cfg.backtest.slippage_bps
     );
-    for r in &results {
+    for r in results {
         print!(
             "{}",
             report::table(&format!("== {} ==", r.name), &r.by_score)
@@ -110,44 +132,192 @@ async fn main() -> anyhow::Result<()> {
                 &r.signature
             )
         );
-        print!(
-            "{}",
-            report::table(
-                &format!(
-                    "   nach Kategorie (Score ab {:.0})",
-                    cfg.scoring.alert_threshold
-                ),
-                &r.by_category
-            )
-        );
+        print!("{}", report::table(category_title, &r.by_category));
     }
     println!(
         "\nHinweise: Wallet-Alter aus join_date; die Anzahl gehandelter Märkte fließt nicht ein (nur heutiger Wert verfügbar). \
          Konzentration aus den Käufen der letzten {} Tage angenähert. Märkte mit mehr als {} Trades werden übersprungen.",
         cfg.backtest.wallet_history_days, cfg.backtest.max_trades_per_market
     );
+}
+
+async fn load(
+    client: &PolymarketClient,
+    cfg: &Config,
+    opts: &LoadOptions,
+    now: i64,
+) -> anyhow::Result<Dataset> {
+    Ok(dataset::load(client, &cfg.backtest, opts, now).await?)
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let _ = dotenvy::dotenv();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+    let cli = Cli::parse();
+    let common = cli.common;
+
+    let mut cfg = Config::load().context("loading configuration")?;
+    if let Some(r) = common.rps10 {
+        cfg.backtest.requests_per_10s = r;
+    }
+    let client = PolymarketClient::new(&cfg.collector)?
+        .with_rate(cfg.backtest.requests_per_10s)
+        .with_cache(&common.cache_dir)
+        .with_context(|| format!("creating cache dir {}", common.cache_dir.display()))?;
+    let now = chrono::Utc::now().timestamp();
+
+    let command = cli.command.unwrap_or(Command::Score {
+        markets_per_niche_tag: None,
+        markets_per_control_tag: None,
+        lookback_days: None,
+    });
+
+    let (kind, output) = match command {
+        Command::Score {
+            markets_per_niche_tag,
+            markets_per_control_tag,
+            lookback_days,
+        } => {
+            if let Some(n) = markets_per_niche_tag {
+                cfg.backtest.markets_per_niche_tag = n;
+            }
+            if let Some(n) = markets_per_control_tag {
+                cfg.backtest.markets_per_control_tag = n;
+            }
+            if let Some(d) = lookback_days {
+                cfg.backtest.lookback_days = d;
+            }
+            let data = load(&client, &cfg, &LoadOptions::default(), now).await?;
+            println!("SmartMoney Backtest (Score-Varianten)");
+            print_load_stats(&data.stats);
+            let results = run_variants(&data, &cfg);
+            print_variants(
+                &cfg,
+                &results,
+                &format!(
+                    "   nach Kategorie (Score ab {:.0})",
+                    cfg.scoring.alert_threshold
+                ),
+            );
+            (
+                "score",
+                serde_json::json!({ "stats": data.stats, "results": results }),
+            )
+        }
+        Command::Insider {
+            markets_per_tag,
+            lookback_days,
+            min_usd,
+        } => {
+            cfg.backtest.markets_per_niche_tag = markets_per_tag;
+            cfg.backtest.control_tags.clear();
+            cfg.backtest.lookback_days = lookback_days;
+            cfg.backtest.min_candidate_usd = cfg.backtest.min_candidate_usd.min(min_usd);
+            let opts = LoadOptions {
+                categories: Some(HashSet::from([
+                    MarketCategory::Personnel,
+                    MarketCategory::Corporate,
+                    MarketCategory::Legal,
+                ])),
+                wallets: true,
+                max_event_pages: 80,
+            };
+            let data = load(&client, &cfg, &opts, now).await?;
+            println!(
+                "SmartMoney Backtest (gezielter Insider-Test: Personalien, Firmen, Gerichte, {lookback_days} Tage, ab ${min_usd:.0})"
+            );
+            print_load_stats(&data.stats);
+            let results = run_given_variants(&data, &cfg, insider_variants(min_usd), 0.0);
+            print_variants(&cfg, &results, "   nach Kategorie (alle Scores)");
+            (
+                "insider",
+                serde_json::json!({ "stats": data.stats, "results": results }),
+            )
+        }
+        Command::Smart {
+            markets_per_tag,
+            lookback_days,
+            split_days_ago,
+            p1_min_trades,
+            p1_min_markets,
+            p2_min_trades,
+            copy_min_usd,
+        } => {
+            cfg.backtest.markets_per_niche_tag = markets_per_tag;
+            cfg.backtest.markets_per_control_tag = markets_per_tag;
+            cfg.backtest.lookback_days = lookback_days;
+            let opts = LoadOptions {
+                categories: None,
+                wallets: false,
+                max_event_pages: 80,
+            };
+            let data = load(&client, &cfg, &opts, now).await?;
+            let split_days = split_days_ago.unwrap_or(lookback_days as i64 / 2);
+            let smart_cfg = SmartConfig {
+                split_ts: now - split_days * DAY,
+                resolve_margin_days: 3,
+                p1_min_trades,
+                p1_min_markets,
+                p2_min_trades,
+                groups: 5,
+                copy_min_usd,
+                follow_delays_minutes: cfg.backtest.follow_delays_minutes.clone(),
+                slippage_bps: cfg.backtest.slippage_bps,
+                fee_bps: cfg.simulation.fee_bps,
+            };
+            let r = smart::evaluate(&data.cases, &smart_cfg);
+            println!(
+                "SmartMoney Backtest (Smart-Money-Persistenz, Stichtag vor {split_days} Tagen)"
+            );
+            print_load_stats(&data.stats);
+            println!(
+                "Periode 1: {} Märkte, die mindestens 3 Tage vor dem Stichtag endeten. Periode 2: Trades ab dem Stichtag in {} Märkten.",
+                r.p1_markets, r.p2_markets
+            );
+            println!(
+                "{} Wallets mit mindestens {p1_min_trades} Trades in {p1_min_markets} Märkten (P1) und {p2_min_trades} Trades (P2). \
+                 Rangkorrelation Edge P1 zu P2: {}.",
+                r.eligible_wallets,
+                r.spearman.map_or("–".into(), |s| format!("{s:+.2}"))
+            );
+            println!(
+                "Edge = Vorsprung pro Trade gegenüber dem Endergebnis (Kauf: Auszahlung - Kurs, Verkauf: Kurs - Auszahlung), \
+                 je Wallet nach Einsatz gewichtet. Gruppen nach Edge P1 sortiert. Kopie +Xm = Ø Rendite beim Nachziehen aller \
+                 Käufe ab ${copy_min_usd:.0} der Gruppe in P2 (Einstiege/Märkte).\n"
+            );
+            print!("{}", report::smart_table(&r));
+            (
+                "smart",
+                serde_json::json!({ "stats": data.stats, "split_days_ago": split_days, "report": r }),
+            )
+        }
+    };
 
     let output = serde_json::json!({
+        "kind": kind,
         "created_at": now,
-        "stats": data.stats,
         "config": { "backtest": cfg.backtest, "scoring": cfg.scoring },
-        "results": results,
+        "output": output,
     });
-    if let Some(path) = &args.json {
+    if let Some(path) = &common.json {
         std::fs::write(path, serde_json::to_string_pretty(&output)?)
             .with_context(|| format!("writing {}", path.display()))?;
         eprintln!("JSON written to {}", path.display());
     }
-    if !args.no_save {
+    if !common.no_save {
         let store = Store::open(&cfg.database.path).await?;
         sqlx::query(
             "INSERT INTO backtest_runs (created_at, params_json, results_json) VALUES (?, ?, ?)",
         )
         .bind(now)
-        .bind(output["config"].to_string())
-        .bind(
-            serde_json::json!({"stats": output["stats"], "results": output["results"]}).to_string(),
-        )
+        .bind(serde_json::json!({ "kind": kind, "config": output["config"] }).to_string())
+        .bind(output["output"].to_string())
         .execute(store.pool())
         .await?;
         store.pool().close().await;

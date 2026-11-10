@@ -9,6 +9,7 @@
 pub mod dataset;
 pub mod engine;
 pub mod report;
+pub mod smart;
 
 use engine::{evaluate, Evaluated, Variant};
 use report::GroupStats;
@@ -57,36 +58,12 @@ pub struct VariantResult {
 }
 
 pub fn run_variants(data: &dataset::Dataset, cfg: &Config) -> Vec<VariantResult> {
-    let bt = &cfg.backtest;
-    default_variants(cfg)
-        .into_iter()
-        .map(|v| {
-            let rows: Vec<Evaluated> = evaluate(
-                &data.cases,
-                &data.wallets,
-                &v,
-                &cfg.scoring,
-                bt,
-                cfg.simulation.fee_bps,
-            );
-            VariantResult {
-                by_score: report::by_score(
-                    &rows,
-                    &bt.score_buckets,
-                    &bt.follow_delays_minutes,
-                    bt.stake_usd,
-                ),
-                signature: signature_groups(&rows, cfg),
-                by_category: report::by_category(
-                    &rows,
-                    cfg.scoring.alert_threshold,
-                    &bt.follow_delays_minutes,
-                    bt.stake_usd,
-                ),
-                name: v.name,
-            }
-        })
-        .collect()
+    run_given_variants(
+        data,
+        cfg,
+        default_variants(cfg),
+        cfg.scoring.alert_threshold,
+    )
 }
 
 type RowFilter<'a> = Box<dyn Fn(&Evaluated) -> bool + 'a>;
@@ -120,6 +97,66 @@ pub fn signature_groups(rows: &[Evaluated], cfg: &Config) -> Vec<GroupStats> {
         .map(|(label, pred)| {
             let members: Vec<&Evaluated> = rows.iter().filter(|r| pred(r)).collect();
             report::group_stats(label, &members, &bt.follow_delays_minutes, bt.stake_usd)
+        })
+        .collect()
+}
+
+/// Variants for the targeted insider test (niche categories, lower size
+/// threshold).
+pub fn insider_variants(min_usd: f64) -> Vec<Variant> {
+    vec![
+        Variant {
+            name: format!("A: aktuell (additiv, ab ${min_usd:.0})"),
+            mode: ScoreMode::Additive,
+            min_usd,
+            min_payout: None,
+            min_payout_price: 0.0,
+        },
+        Variant {
+            name: format!("B: Marktart als Multiplikator (ab ${min_usd:.0})"),
+            mode: ScoreMode::Multiplicative,
+            min_usd,
+            min_payout: None,
+            min_payout_price: 0.0,
+        },
+    ]
+}
+
+/// Evaluate variants; the category table covers scores >= `category_min_score`.
+pub fn run_given_variants(
+    data: &dataset::Dataset,
+    cfg: &Config,
+    variants: Vec<Variant>,
+    category_min_score: f64,
+) -> Vec<VariantResult> {
+    let bt = &cfg.backtest;
+    variants
+        .into_iter()
+        .map(|v| {
+            let rows = evaluate(
+                &data.cases,
+                &data.wallets,
+                &v,
+                &cfg.scoring,
+                bt,
+                cfg.simulation.fee_bps,
+            );
+            VariantResult {
+                by_score: report::by_score(
+                    &rows,
+                    &bt.score_buckets,
+                    &bt.follow_delays_minutes,
+                    bt.stake_usd,
+                ),
+                signature: signature_groups(&rows, cfg),
+                by_category: report::by_category(
+                    &rows,
+                    category_min_score,
+                    &bt.follow_delays_minutes,
+                    bt.stake_usd,
+                ),
+                name: v.name,
+            }
         })
         .collect()
 }
