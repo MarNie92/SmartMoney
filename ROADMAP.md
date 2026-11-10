@@ -39,8 +39,14 @@ a merge to `main`, a push and a short check-in with the user.
   negative); copy returns inconsistent and dominated by longshot outliers.
   The earlier +7.1 % came from a small sample. Mirror signals stay
   experimental.
-- [ ] Optional last test: rank wallets on their full trade history (>= 100
-      resolved trades each) instead of the trades seen in the market sample
+- [x] Last test: full trade history of the 1500 most active sample wallets
+      (570 loaded, 930 skipped as bots with > 10k trades; 2.3M trades, 237k
+      markets resolved), >= 50 trades in 10 markets (P1) and 30 (P2).
+      **Result: weak but real rank persistence** (Spearman +0.21 / +0.15 /
+      +0.12, 268-311 wallets per split), **economically too small**: top
+      group P2 edge +2.5 % / +1.6 % / -1.6 %, USDC-weighted +0.4 % / -5.1 % /
+      +0.9 %; copying after 5-15 min is inconsistent (-6 % to +25 %, driven by
+      longshot outliers). Mirroring is not a viable money strategy.
 - [ ] Visual report of the result
 - **Gate:** if copying the top group is positive across splits, mirror
   signals become a primary strategy; otherwise they stay experimental.

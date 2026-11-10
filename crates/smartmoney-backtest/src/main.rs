@@ -7,6 +7,7 @@
 use anyhow::Context;
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use smartmoney_backtest::dataset::{self, Dataset, LoadOptions};
+use smartmoney_backtest::fullhistory::{self, FullHistoryOptions};
 use smartmoney_backtest::smart::{self, SmartConfig};
 use smartmoney_backtest::{
     insider_variants, report, run_given_variants, run_variants, VariantResult,
@@ -83,15 +84,28 @@ enum Command {
         /// Length of period 2 (trades after the split), in days.
         #[arg(long, default_value_t = 90)]
         p2_days: i64,
-        #[arg(long, default_value_t = 20)]
-        p1_min_trades: usize,
-        #[arg(long, default_value_t = 5)]
-        p1_min_markets: usize,
-        #[arg(long, default_value_t = 10)]
-        p2_min_trades: usize,
-        /// Copy test: follow period-2 buys of at least this size.
+        /// Minimum trades in period 1 (default 20, with --full-history 50).
+        #[arg(long)]
+        p1_min_trades: Option<usize>,
+        /// Minimum markets in period 1 (default 5, with --full-history 10).
+        #[arg(long)]
+        p1_min_markets: Option<usize>,
+        /// Minimum trades in period 2 (default 10, with --full-history 30).
+        #[arg(long)]
+        p2_min_trades: Option<usize>,
+        /// Copy test: follow period-2 trades of at least this size.
         #[arg(long, default_value_t = 100.0)]
         copy_min_usd: f64,
+        /// Rate wallets on their complete trade history instead of the
+        /// trades seen in the market sample.
+        #[arg(long)]
+        full_history: bool,
+        /// With --full-history: number of most active sample wallets.
+        #[arg(long, default_value_t = 1500)]
+        candidates: usize,
+        /// With --full-history: skip wallets with more pages of 1000 trades.
+        #[arg(long, default_value_t = 10)]
+        max_pages_per_wallet: usize,
     },
 }
 
@@ -255,7 +269,18 @@ async fn main() -> anyhow::Result<()> {
             p1_min_markets,
             p2_min_trades,
             copy_min_usd,
+            full_history,
+            candidates,
+            max_pages_per_wallet,
         } => {
+            let (d1, d2, d3) = if full_history {
+                (50, 10, 30)
+            } else {
+                (20, 5, 10)
+            };
+            let p1_min_trades = p1_min_trades.unwrap_or(d1);
+            let p1_min_markets = p1_min_markets.unwrap_or(d2);
+            let p2_min_trades = p2_min_trades.unwrap_or(d3);
             let margin_days = 3;
             let oldest_split = splits.iter().copied().max().unwrap_or(180);
             let lookback = oldest_split + p1_days + margin_days;
@@ -274,11 +299,43 @@ async fn main() -> anyhow::Result<()> {
                 windows: Some(windows),
             };
             let data = load(&client, &cfg, &opts, now).await?;
+            let load_stats = data.stats.clone();
+            let (cases, full_stats) = if full_history {
+                let fh = FullHistoryOptions {
+                    candidates,
+                    range_start: now - lookback * DAY,
+                    now,
+                    max_pages_per_wallet,
+                };
+                let (cases, stats) = fullhistory::load(&client, data.cases, &fh).await;
+                (cases, Some(stats))
+            } else {
+                (data.cases, None)
+            };
             println!(
-                "SmartMoney Backtest (Smart-Money-Persistenz, {} Stichtage, Perioden je {p1_days}/{p2_days} Tage)",
+                "SmartMoney Backtest (Smart-Money-Persistenz{}, {} Stichtage, Perioden je {p1_days}/{p2_days} Tage)",
+                if full_history { " mit kompletter Wallet-Historie" } else { "" },
                 splits.len()
             );
-            print_load_stats(&data.stats);
+            print_load_stats(&load_stats);
+            if let Some(f) = &full_stats {
+                println!(
+                    "Wallet-Historien: {} von {} Wallets geladen ({} zu aktiv/Bots, {} Fehler), {} Trades. \
+                     Märkte: {} aus der Stichprobe, {} zusätzlich über Gamma aufgelöst, {} noch offen/ohne Endkurs.",
+                    f.wallets_loaded,
+                    f.candidates,
+                    f.wallets_too_active,
+                    f.wallets_failed,
+                    f.wallet_trades,
+                    f.markets_from_sample,
+                    f.markets_resolved_extra,
+                    f.markets_unresolved
+                );
+                println!(
+                    "Wallets bewertet ab {p1_min_trades} Trades in {p1_min_markets} Märkten (P1) und {p2_min_trades} Trades (P2). \
+                     Der Kopie-Test nutzt nur Märkte der Stichprobe (dort sind alle Trades für den Nachzieh-Kurs bekannt)."
+                );
+            }
             println!(
                 "Edge = Vorsprung pro Trade gegenüber dem Endergebnis (Kauf: Auszahlung - Kurs, Verkauf: Kurs - Auszahlung), \
                  je Wallet nach Einsatz gewichtet. Gruppen nach Edge in Periode 1 sortiert (nur Märkte, die mindestens \
@@ -302,7 +359,7 @@ async fn main() -> anyhow::Result<()> {
                     slippage_bps: cfg.backtest.slippage_bps,
                     fee_bps: cfg.simulation.fee_bps,
                 };
-                let r = smart::evaluate(&data.cases, &smart_cfg);
+                let r = smart::evaluate(&cases, &smart_cfg);
                 println!(
                     "\n== Stichtag vor {split_days} Tagen: P1 {} Märkte, P2 {} Märkte, {} Wallets, Rangkorrelation {} ==",
                     r.p1_markets,
@@ -315,7 +372,7 @@ async fn main() -> anyhow::Result<()> {
             }
             (
                 "smart",
-                serde_json::json!({ "stats": data.stats, "splits": reports }),
+                serde_json::json!({ "stats": load_stats, "full_history": full_stats, "splits": reports }),
             )
         }
     };
