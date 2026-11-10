@@ -12,6 +12,7 @@ use smartmoney_backtest::calibration;
 use smartmoney_backtest::dataset::{self, Dataset, LoadOptions};
 use smartmoney_backtest::fullhistory::{self, FullHistoryOptions};
 use smartmoney_backtest::smart::{self, SmartConfig};
+use smartmoney_backtest::statusquo;
 use smartmoney_backtest::{
     insider_variants, report, run_given_variants, run_variants, VariantResult,
 };
@@ -134,6 +135,19 @@ enum Command {
         /// Leaderboard size (all-time, by PnL and by volume).
         #[arg(long, default_value_t = 200)]
         leaderboard: u32,
+    },
+    /// Status-quo strategy: buy NO in "will X happen by <date>" markets.
+    StatusQuo {
+        #[arg(long, default_value_t = 15)]
+        markets_per_tag_month: usize,
+        #[arg(long, default_value_t = BALANCED_LOOKBACK_DAYS)]
+        lookback_days: i64,
+        /// Also use the niche sample (personnel/corporate/legal, 365 days).
+        #[arg(long, default_value_t = true)]
+        with_niche: bool,
+        /// Minimum size (USDC) of the trade that sets the entry price.
+        #[arg(long, default_value_t = 100.0)]
+        min_trade_usd: f64,
     },
 }
 
@@ -564,6 +578,90 @@ async fn main() -> anyhow::Result<()> {
             (
                 "bots",
                 serde_json::json!({ "stats": data.stats, "groups": groups }),
+            )
+        }
+        Command::StatusQuo {
+            markets_per_tag_month,
+            lookback_days,
+            with_niche,
+            min_trade_usd,
+        } => {
+            let opts = balanced_options(&mut cfg, now, lookback_days, markets_per_tag_month);
+            let mut data = load(&client, &cfg, &opts, now).await?;
+            if with_niche {
+                // Same selection as the `insider` command (cached), without
+                // wallet facts.
+                let mut niche_cfg = cfg.clone();
+                niche_cfg.backtest.markets_per_niche_tag = 150;
+                niche_cfg.backtest.control_tags.clear();
+                niche_cfg.backtest.lookback_days = 365;
+                let niche_opts = LoadOptions {
+                    categories: Some(HashSet::from([
+                        MarketCategory::Personnel,
+                        MarketCategory::Corporate,
+                        MarketCategory::Legal,
+                    ])),
+                    wallets: false,
+                    max_event_pages: 80,
+                    windows: None,
+                };
+                let niche = load(&client, &niche_cfg, &niche_opts, now).await?;
+                let known: HashSet<String> = data
+                    .cases
+                    .iter()
+                    .map(|c| c.market.condition_id.clone())
+                    .collect();
+                data.cases.extend(
+                    niche
+                        .cases
+                        .into_iter()
+                        .filter(|c| !known.contains(&c.market.condition_id)),
+                );
+            }
+            let rules: Vec<statusquo::SqRule> =
+                [(0.80, 0.90), (0.90, 0.95), (0.95, 0.98), (0.98, 0.995)]
+                    .iter()
+                    .flat_map(|band| {
+                        [1i64, 7, 30].map(|min_days| statusquo::SqRule {
+                            band: *band,
+                            min_days,
+                            min_trade_usd,
+                        })
+                    })
+                    .collect();
+            let stake = cfg.backtest.stake_usd;
+            let (sq, control) =
+                statusquo::evaluate(&data.cases, &rules, cfg.backtest.slippage_bps, stake);
+            let sq_markets = data
+                .cases
+                .iter()
+                .filter(|c| statusquo::is_status_quo_market(&c.market))
+                .count();
+            println!("SmartMoney Strategie-Test: Status quo (\"es passiert nichts\")");
+            println!(
+                "{} Märkte geladen, davon {sq_markets} Status-quo-Märkte (\"Will X ... by/before/in <Datum>?\", ohne Sport, Krypto, Wetter).",
+                data.cases.len()
+            );
+            println!(
+                "Regel: pro Markt einmal NEIN kaufen, beim ersten Trade ab ${min_trade_usd:.0} mit NEIN-Kurs im Band und mindestens N Tagen bis Marktende; \
+                 halten bis zur Auflösung. Kosten: +{:.0} bps Slippage und Polymarket-Taker-Gebühr (Satz x p x (1-p), \
+                 4-7 % je Kategorie). Einsatz ${stake:.0} pro Trade. 95%-Bereich nach Events gruppiert.",
+                cfg.backtest.slippage_bps
+            );
+            print!(
+                "{}",
+                report::status_quo_table("== Status-quo-Märkte ==", &sq)
+            );
+            print!(
+                "{}",
+                report::status_quo_table(
+                    "== Vergleich: alle anderen Ja/Nein-Märkte, gleiche Regel ==",
+                    &control
+                )
+            );
+            (
+                "status_quo",
+                serde_json::json!({ "markets": data.cases.len(), "status_quo_markets": sq_markets, "status_quo": sq, "control": control }),
             )
         }
     };

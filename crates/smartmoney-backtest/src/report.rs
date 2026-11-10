@@ -410,6 +410,48 @@ pub fn bots_table(groups: &[crate::bots::GroupProfile]) -> String {
     s
 }
 
+/// Status-quo strategy rows.
+pub fn status_quo_table(title: &str, rows: &[crate::statusquo::SqResult]) -> String {
+    let mut s = String::new();
+    let _ = writeln!(s, "\n{title}");
+    let header = format!(
+        "{:<20} {:>7} {:>7} {:>9} {:>9} {:>9} {:>20} {:>10} {:>10} {:>11}",
+        "Regel",
+        "Märkte",
+        "Events",
+        "Gewinn%",
+        "Ø Kosten",
+        "Rendite",
+        "95%-Bereich",
+        "Gewinn",
+        "Drawdown",
+        "schlechtest"
+    );
+    let _ = writeln!(s, "{header}");
+    let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
+    for r in rows {
+        let _ = writeln!(
+            s,
+            "{:<20} {:>7} {:>7} {:>9} {:>9} {:>9} {:>20} {:>10} {:>10} {:>11}",
+            r.label,
+            r.markets,
+            r.events,
+            pct(Some(r.win_rate)),
+            format!("{:.1}¢", r.avg_cost * 100.0),
+            signed_pct(Some(r.roi)),
+            format!(
+                "{} bis {}",
+                signed_pct(Some(r.roi_lo)),
+                signed_pct(Some(r.roi_hi))
+            ),
+            usd_compact(r.pnl),
+            usd_compact(-r.max_drawdown),
+            usd_compact(r.worst_trade),
+        );
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
