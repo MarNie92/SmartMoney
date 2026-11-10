@@ -140,3 +140,7 @@ Milestones 1-3 done.
   -0.14, top group P2 edge +1.5 % / +2.2 % / -5.7 %. No persistence; Phase 1
   gate failed, mirror signals experimental. Copy ROI averages are noisy
   (longshot outliers); prefer edge metrics.
+- Full-history smart test 2026-11-10 (`smart --full-history`, 570 wallets,
+  2.3M trades): Spearman +0.21 / +0.15 / +0.12 (weak real persistence), top
+  group P2 edge +2.5 % / +1.6 % / -1.6 %; copying inconsistent. Persistence
+  exists but is too small to exploit after delay and slippage.
