@@ -61,6 +61,12 @@ dashboard is reached only via Tailscale (no public port) with a token.
   `/markets` 300; CLOB `/book` 1500; 429 + `Retry-After`. Our client paces
   to `max_requests_per_10s` (default 50) and retries 429/5xx with backoff.
 - Volume: ~7 trades >= $2,000 per minute (2026-11-08), mostly sports.
+- Fees (docs.polymarket.com/trading/fees.md, checked 2026-11-10): taker only,
+  `fee = shares * rate * p * (1 - p)` with `feeSchedule.rate` per market
+  (crypto 0.07, sports 0.05, politics/tech/finance 0.04, geopolitics 0);
+  makers get `rebateRate` (15-25 %) of the taker fees. As share of stake:
+  `rate * (1 - p)`. Rolled out Jan-Mar 2026. Earlier follow/copy returns in
+  the backtests did not subtract fees (`simulation.fee_bps` = 0).
 
 ## Environment notes
 
@@ -144,3 +150,15 @@ Milestones 1-3 done.
   2.3M trades): Spearman +0.21 / +0.15 / +0.12 (weak real persistence), top
   group P2 edge +2.5 % / +1.6 % / -1.6 %; copying inconsistent. Persistence
   exists but is too small to exploit after delay and slippage.
+- Calibration 2026-11-10 (`calibration`, 1.27M trades, 1808 markets): market
+  well calibrated overall (edge -0.4 %); longshots 2-10¢ overpriced by ~1
+  point (-19..-25 % buy return before fees, CI includes 0); only cell with a
+  positive CI: crypto favourites >= 90¢ +1.8 % (+0.4..+3.2), weak given ~36
+  cells; long-dated favourites +0.9 % is time value of money.
+- Wallet profile 2026-11-10 (`bots`): 930 bots (> 10k trades/yr) 63 %
+  profitable, $65M all-in, about half from rebates + rewards, margin 0.6 %
+  of volume, 45 % of their trades in crypto, median trade $6 (market
+  making). 570 active traders: 45 % profitable, median -$39. PnL top 200:
+  $578M almost all from directional trading, half sports, median trade
+  $167 (survivor-selected). Volume top 200: 75 % profitable, ~36 % of profit
+  from rebates/rewards.

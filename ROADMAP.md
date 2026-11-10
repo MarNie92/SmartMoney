@@ -51,6 +51,17 @@ a merge to `main`, a push and a short check-in with the user.
 - **Gate:** if copying the top group is positive across splits, mirror
   signals become a primary strategy; otherwise they stay experimental.
 
+## Phase 1b: Calibration and wallet profiles (done)
+
+- [x] Calibration of prices vs outcomes (by price, category, time to end)
+- [x] Who makes money: bots, active traders, leaderboards (PnL composition
+      and behaviour)
+- Result: no exploitable mispricing after fees except a weak lead
+  (crypto favourites >= 90¢, +1.8 % edge, ~+1.5 % after fees, one of ~36
+  cells); bots earn as market makers (spread, rebates, rewards), which a
+  follower cannot copy. Taker fees (rate * (1 - p) of stake) must be part
+  of every simulated fill.
+
 ## Phase 2: Signal pipeline
 
 - [ ] `Signal` type and `signals` table: kind (insider / mirror), trade,
