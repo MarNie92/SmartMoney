@@ -43,6 +43,9 @@ pub struct MarketCase {
     pub trades: Vec<HistTrade>,
     /// Sampled as comparison market (sports, crypto).
     pub control: bool,
+    /// `trades` holds every trade of the market (false when only the trades
+    /// of selected wallets are known; follow prices are then unreliable).
+    pub trades_complete: bool,
 }
 
 /// Wallet facts that do not depend on time, plus its buy history.
@@ -366,6 +369,7 @@ mod tests {
             payouts: vec![1.0, 0.0],
             trades,
             control: false,
+            trades_complete: true,
         }
     }
 

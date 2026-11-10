@@ -300,7 +300,7 @@ fn copy_stats(
     let mut buys = Vec::new();
     let mut sells = Vec::new();
     let mut markets = HashSet::new();
-    for case in cases {
+    for case in cases.iter().filter(|c| c.trades_complete) {
         let binary = case.payouts.len() == 2;
         for (i, t) in case.trades.iter().enumerate() {
             if t.timestamp < cfg.split_ts
@@ -408,6 +408,7 @@ mod tests {
             payouts,
             trades,
             control: false,
+            trades_complete: true,
         }
     }
 

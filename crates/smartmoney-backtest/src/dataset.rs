@@ -265,6 +265,7 @@ async fn load_case(client: &PolymarketClient, s: Selected, max_trades: usize) ->
             payouts,
             trades,
             control: s.control,
+            trades_complete: true,
         }),
         source,
         mismatch,

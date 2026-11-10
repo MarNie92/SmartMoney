@@ -427,4 +427,55 @@ impl PolymarketClient {
             .await?;
         Ok(res.value.data)
     }
+    /// One page (newest first, up to 1000) of a wallet's taker trades
+    /// between `start` and `end` (epoch seconds, inclusive).
+    pub async fn user_trades_page(
+        &self,
+        user: &str,
+        start: i64,
+        end: i64,
+        cursor: Option<&str>,
+    ) -> Result<Page<DataTrade>, ApiError> {
+        let mut query = vec![
+            ("user", user.to_owned()),
+            ("start", start.max(1).to_string()),
+            ("end", end.to_string()),
+            ("limit", "1000".to_owned()),
+        ];
+        if let Some(c) = cursor {
+            query.push(("cursor", c.to_owned()));
+        }
+        Ok(self
+            .get(&format!("{}/v2/trades", self.data_url), &query)
+            .await?
+            .value)
+    }
+
+    /// Gamma markets for several condition ids at once (open or closed).
+    /// Malformed entries are skipped.
+    pub async fn gamma_markets_batch(
+        &self,
+        condition_ids: &[String],
+    ) -> Result<Vec<GammaMarket>, ApiError> {
+        if condition_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut query: Vec<(&str, String)> = condition_ids
+            .iter()
+            .map(|c| ("condition_ids", c.clone()))
+            .collect();
+        query.push(("closed", "any".to_owned()));
+        query.push(("limit", condition_ids.len().max(1).to_string()));
+        let raw = self
+            .get_value(&format!("{}/markets", self.gamma_url), &query)
+            .await?;
+        Ok(raw
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|m| GammaMarket::deserialize(m).ok())
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
 }

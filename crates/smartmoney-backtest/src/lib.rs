@@ -8,6 +8,7 @@
 
 pub mod dataset;
 pub mod engine;
+pub mod fullhistory;
 pub mod report;
 pub mod smart;
 
