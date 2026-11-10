@@ -478,4 +478,35 @@ impl PolymarketClient {
             })
             .unwrap_or_default())
     }
+
+    /// Wallet addresses from the leaderboard (time period: day, week, month,
+    /// all; sort: PNL or VOLUME), best first.
+    pub async fn leaderboard(
+        &self,
+        time_period: &str,
+        sort_by: &str,
+        limit: u32,
+    ) -> Result<Vec<String>, ApiError> {
+        let raw = self
+            .get_value(
+                &format!("{}/v2/leaderboard", self.data_url),
+                &[
+                    ("time_period", time_period.to_owned()),
+                    ("sort_by", sort_by.to_owned()),
+                    ("category", "overall".to_owned()),
+                    ("limit", limit.to_string()),
+                ],
+            )
+            .await?;
+        Ok(raw
+            .get("data")
+            .and_then(|d| d.as_array())
+            .map(|rows| {
+                rows.iter()
+                    .filter_map(|r| r.get("user_id")?.as_str())
+                    .map(str::to_lowercase)
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
 }

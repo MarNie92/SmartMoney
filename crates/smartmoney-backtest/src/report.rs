@@ -267,6 +267,149 @@ pub fn smart_table(r: &crate::smart::SmartReport) -> String {
     s
 }
 
+/// Calibration table per price bucket.
+pub fn calibration_table(rows: &[crate::calibration::CalibStats]) -> String {
+    let mut s = String::new();
+    let header = format!(
+        "{:<10} {:>9} {:>7} {:>8} {:>8} {:>8} {:>20} {:>12}",
+        "Kurs", "Trades", "Märkte", "Ø Kurs", "Treffer", "Edge", "95%-Bereich Edge", "Kauf-Rendite"
+    );
+    let _ = writeln!(s, "{header}");
+    let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
+    for r in rows {
+        let _ = writeln!(
+            s,
+            "{:<10} {:>9} {:>7} {:>8} {:>8} {:>8} {:>20} {:>12}",
+            r.label,
+            r.trades,
+            r.markets,
+            pct(r.avg_price),
+            pct(r.hit_rate),
+            signed_pct(r.edge),
+            format!("{} bis {}", signed_pct(r.edge_lo), signed_pct(r.edge_hi)),
+            signed_pct(r.buy_roi),
+        );
+    }
+    s
+}
+
+/// Edge per price zone for groups (category, time to resolution).
+pub fn zone_table(title: &str, groups: &[crate::calibration::GroupCalib]) -> String {
+    let mut s = String::new();
+    let _ = writeln!(s, "\n{title}");
+    let mut header = format!("{:<13} {:>9} {:>7}", "Gruppe", "Trades", "Märkte");
+    for (name, _, _) in crate::calibration::ZONES {
+        let _ = write!(header, " {:>34}", format!("Edge {name} (95%)"));
+    }
+    let _ = writeln!(s, "{header}");
+    let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
+    for g in groups {
+        let mut line = format!("{:<13} {:>9} {:>7}", g.label, g.trades, g.markets);
+        for z in &g.zones {
+            let cell = match z.edge {
+                Some(e) => format!(
+                    "{:+.1}% ({}..{}) n={}",
+                    e * 100.0,
+                    signed_pct(z.edge_lo),
+                    signed_pct(z.edge_hi),
+                    z.trades
+                ),
+                None => "–".into(),
+            };
+            let _ = write!(line, " {cell:>34}");
+        }
+        let _ = writeln!(s, "{line}");
+    }
+    s
+}
+
+fn usd_compact(v: f64) -> String {
+    let a = v.abs();
+    let sign = if v < 0.0 { "-" } else { "" };
+    if a >= 1e6 {
+        format!("{sign}${:.1} Mio", a / 1e6)
+    } else if a >= 1e3 {
+        format!("{sign}${:.0}k", a / 1e3)
+    } else {
+        format!("{sign}${a:.0}")
+    }
+}
+
+/// Wallet group profiles: PnL composition and behaviour.
+pub fn bots_table(groups: &[crate::bots::GroupProfile]) -> String {
+    let mut s = String::new();
+    let header = format!(
+        "{:<28} {:>9} {:>10} {:>10} {:>11} {:>12} {:>11} {:>10} {:>10} {:>12} {:>8}",
+        "Gruppe",
+        "Wallets",
+        "profitabel",
+        "Median",
+        "Gesamt",
+        "Handel real.",
+        "unrealis.",
+        "Rebates",
+        "Prämien",
+        "Volumen",
+        "Marge"
+    );
+    let _ = writeln!(s, "{header}");
+    let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
+    for g in groups {
+        let _ = writeln!(
+            s,
+            "{:<28} {:>9} {:>10} {:>10} {:>11} {:>12} {:>11} {:>10} {:>10} {:>12} {:>8}",
+            g.label,
+            format!("{}/{}", g.with_pnl, g.wallets),
+            pct(g.profitable_share),
+            g.median_economic.map_or("–".into(), usd_compact),
+            usd_compact(g.sum_economic),
+            usd_compact(g.sum_trading_realized),
+            usd_compact(g.sum_unrealized),
+            usd_compact(g.sum_rebates),
+            usd_compact(g.sum_sponsored),
+            usd_compact(g.sum_volume_usdc),
+            g.margin
+                .map_or("–".into(), |m| format!("{:+.2}%", m * 100.0)),
+        );
+    }
+    let header2 = format!(
+        "{:<28} {:>8} {:>9} {:>9} {:>9} {:>9} {:>11} {:>8} {:>8} {:>9}",
+        "Verhalten (Stichprobe)",
+        "Wallets",
+        "Trades",
+        "Verkäufe",
+        "bis 10¢",
+        "ab 90¢",
+        "beidseitig",
+        "Sport",
+        "Krypto",
+        "Median"
+    );
+    let _ = writeln!(s, "\n{header2}");
+    let _ = writeln!(s, "{}", "-".repeat(header2.chars().count()));
+    for g in groups {
+        let Some(b) = &g.behavior else {
+            let _ = writeln!(s, "{:<28} {:>8}", g.label, 0);
+            continue;
+        };
+        let _ = writeln!(
+            s,
+            "{:<28} {:>8} {:>9} {:>9} {:>9} {:>9} {:>11} {:>8} {:>8} {:>9}",
+            g.label,
+            g.with_behavior,
+            b.trades,
+            pct(Some(b.sell_share)),
+            pct(Some(b.longshot_share)),
+            pct(Some(b.favorite_share)),
+            pct(Some(b.two_sided_share)),
+            pct(Some(b.sports_share)),
+            pct(Some(b.crypto_share)),
+            usd_compact(b.median_usd),
+        );
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6,6 +6,9 @@
 
 use anyhow::Context;
 use clap::{Args as ClapArgs, Parser, Subcommand};
+use futures::stream::{self, StreamExt};
+use smartmoney_backtest::bots::{self, PnlBreakdown};
+use smartmoney_backtest::calibration;
 use smartmoney_backtest::dataset::{self, Dataset, LoadOptions};
 use smartmoney_backtest::fullhistory::{self, FullHistoryOptions};
 use smartmoney_backtest::smart::{self, SmartConfig};
@@ -15,7 +18,7 @@ use smartmoney_backtest::{
 use smartmoney_collector::PolymarketClient;
 use smartmoney_core::{Config, MarketCategory};
 use smartmoney_store::Store;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
 
@@ -107,6 +110,31 @@ enum Command {
         #[arg(long, default_value_t = 10)]
         max_pages_per_wallet: usize,
     },
+    /// Calibration: do outcomes traded at price p win p of the time?
+    Calibration {
+        /// Markets per tag and 30-day window.
+        #[arg(long, default_value_t = 15)]
+        markets_per_tag_month: usize,
+        #[arg(long, default_value_t = BALANCED_LOOKBACK_DAYS)]
+        lookback_days: i64,
+    },
+    /// Who makes money and how: PnL composition and behaviour of bots,
+    /// active traders and leaderboard wallets.
+    Bots {
+        #[arg(long, default_value_t = 15)]
+        markets_per_tag_month: usize,
+        #[arg(long, default_value_t = BALANCED_LOOKBACK_DAYS)]
+        lookback_days: i64,
+        /// Most active sample wallets to classify (bot vs. active trader).
+        #[arg(long, default_value_t = 1500)]
+        candidates: usize,
+        /// Wallets with more pages of 1000 trades in the range count as bots.
+        #[arg(long, default_value_t = 10)]
+        max_pages_per_wallet: usize,
+        /// Leaderboard size (all-time, by PnL and by volume).
+        #[arg(long, default_value_t = 200)]
+        leaderboard: u32,
+    },
 }
 
 fn print_load_stats(s: &dataset::LoadStats) {
@@ -168,6 +196,33 @@ async fn load(
 ) -> anyhow::Result<Dataset> {
     Ok(dataset::load(client, &cfg.backtest, opts, now).await?)
 }
+
+/// Balanced sample: every niche and control tag fills its quota in each
+/// 30-day end-date window over `lookback_days` (an even sample over time
+/// instead of only the most recently ended markets).
+fn balanced_options(
+    cfg: &mut Config,
+    now: i64,
+    lookback_days: i64,
+    per_tag_month: usize,
+) -> LoadOptions {
+    cfg.backtest.markets_per_niche_tag = per_tag_month;
+    cfg.backtest.markets_per_control_tag = per_tag_month;
+    cfg.backtest.lookback_days = lookback_days as u64;
+    let windows: Vec<(i64, i64)> = (0..(lookback_days + 29) / 30)
+        .map(|k| (now - (k + 1) * 30 * DAY, now - k * 30 * DAY))
+        .collect();
+    LoadOptions {
+        categories: None,
+        wallets: false,
+        max_event_pages: 40,
+        windows: Some(windows),
+    }
+}
+
+/// Lookback of the default smart-money run (270 + 90 + 3 days); reusing it
+/// lets other analyses hit the same cache.
+const BALANCED_LOOKBACK_DAYS: i64 = 363;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -284,20 +339,7 @@ async fn main() -> anyhow::Result<()> {
             let margin_days = 3;
             let oldest_split = splits.iter().copied().max().unwrap_or(180);
             let lookback = oldest_split + p1_days + margin_days;
-            cfg.backtest.markets_per_niche_tag = markets_per_tag_month;
-            cfg.backtest.markets_per_control_tag = markets_per_tag_month;
-            cfg.backtest.lookback_days = lookback as u64;
-            // 30-day end-date windows over the whole range: an even sample
-            // over time instead of only the most recently ended markets.
-            let windows: Vec<(i64, i64)> = (0..(lookback + 29) / 30)
-                .map(|k| (now - (k + 1) * 30 * DAY, now - k * 30 * DAY))
-                .collect();
-            let opts = LoadOptions {
-                categories: None,
-                wallets: false,
-                max_event_pages: 40,
-                windows: Some(windows),
-            };
+            let opts = balanced_options(&mut cfg, now, lookback, markets_per_tag_month);
             let data = load(&client, &cfg, &opts, now).await?;
             let load_stats = data.stats.clone();
             let (cases, full_stats) = if full_history {
@@ -373,6 +415,155 @@ async fn main() -> anyhow::Result<()> {
             (
                 "smart",
                 serde_json::json!({ "stats": load_stats, "full_history": full_stats, "splits": reports }),
+            )
+        }
+        Command::Calibration {
+            markets_per_tag_month,
+            lookback_days,
+        } => {
+            let opts = balanced_options(&mut cfg, now, lookback_days, markets_per_tag_month);
+            let data = load(&client, &cfg, &opts, now).await?;
+            println!(
+                "SmartMoney Kalibrierung: Gewinnt ein Outcome, das zu Kurs p gehandelt wird, in p der Fälle?"
+            );
+            print_load_stats(&data.stats);
+            println!(
+                "Jeder Trade ist eine Beobachtung (Kurs des gehandelten Outcomes, Endergebnis). Edge = Treffer - Ø Kurs: \
+                 > 0 heißt unterbewertet (Kaufen war im Schnitt profitabel), < 0 überbewertet. 95%-Bereich nach Märkten \
+                 gruppiert. Kauf-Rendite = Treffer / Ø Kurs - 1, vor Gebühren und Slippage.\n"
+            );
+            let buckets = calibration::by_price(
+                &data.cases,
+                &[
+                    0.02, 0.05, 0.10, 0.20, 0.35, 0.50, 0.65, 0.80, 0.90, 0.95, 0.98,
+                ],
+            );
+            print!("{}", report::calibration_table(&buckets));
+            let categories = calibration::by_category(&data.cases);
+            print!("{}", report::zone_table("nach Kategorie", &categories));
+            let horizons = calibration::by_horizon(&data.cases);
+            print!(
+                "{}",
+                report::zone_table("nach Zeit bis Marktende", &horizons)
+            );
+            (
+                "calibration",
+                serde_json::json!({
+                    "stats": data.stats,
+                    "by_price": buckets,
+                    "by_category": categories,
+                    "by_horizon": horizons,
+                }),
+            )
+        }
+        Command::Bots {
+            markets_per_tag_month,
+            lookback_days,
+            candidates,
+            max_pages_per_wallet,
+            leaderboard,
+        } => {
+            let opts = balanced_options(&mut cfg, now, lookback_days, markets_per_tag_month);
+            let data = load(&client, &cfg, &opts, now).await?;
+
+            // 1. Classify the most active sample wallets.
+            let fh = FullHistoryOptions {
+                candidates,
+                range_start: now - lookback_days * DAY,
+                now,
+                max_pages_per_wallet,
+            };
+            let picked = fullhistory::pick_candidates(&data.cases, candidates);
+            tracing::info!(wallets = picked.len(), "classifying wallets");
+            let classified: Vec<(String, Result<bool, _>)> = stream::iter(picked)
+                .map(|w| {
+                    let client = &client;
+                    let fh = &fh;
+                    async move {
+                        let r = fullhistory::is_too_active(client, &w, fh).await;
+                        (w, r)
+                    }
+                })
+                .buffer_unordered(8)
+                .collect()
+                .await;
+            let mut bots = Vec::new();
+            let mut traders = Vec::new();
+            for (w, r) in classified {
+                match r {
+                    Ok(true) => bots.push(w),
+                    Ok(false) => traders.push(w),
+                    Err(e) => tracing::warn!(wallet = %w, error = %e, "classification skipped"),
+                }
+            }
+            bots.sort();
+            traders.sort();
+
+            // 2. Leaderboards (all-time).
+            let top_pnl = client.leaderboard("all", "PNL", leaderboard).await?;
+            let top_volume = client.leaderboard("all", "VOLUME", leaderboard).await?;
+
+            // 3. PnL composition for every wallet in any group.
+            let all: HashSet<String> = bots
+                .iter()
+                .chain(&traders)
+                .chain(&top_pnl)
+                .chain(&top_volume)
+                .cloned()
+                .collect();
+            tracing::info!(wallets = all.len(), "loading PnL composition");
+            let pnl: HashMap<String, PnlBreakdown> = stream::iter(all.iter().cloned())
+                .map(|w| {
+                    let client = &client;
+                    async move {
+                        let r = client.user_stats(&w).await;
+                        (w, r)
+                    }
+                })
+                .buffer_unordered(8)
+                .filter_map(|(w, r)| async move {
+                    match r {
+                        Ok(stats) => PnlBreakdown::from_user_stats(&stats.raw).map(|p| (w, p)),
+                        Err(e) => {
+                            tracing::warn!(wallet = %w, error = %e, "user stats skipped");
+                            None
+                        }
+                    }
+                })
+                .collect()
+                .await;
+            let behavior = bots::behaviors(&data.cases, &all);
+
+            let groups = vec![
+                bots::profile("Bots (> 10.000 Trades/Jahr)", &bots, &pnl, &behavior),
+                bots::profile("Aktive Trader", &traders, &pnl, &behavior),
+                bots::profile(
+                    &format!("Rangliste Gewinn Top {leaderboard}"),
+                    &top_pnl,
+                    &pnl,
+                    &behavior,
+                ),
+                bots::profile(
+                    &format!("Rangliste Volumen Top {leaderboard}"),
+                    &top_volume,
+                    &pnl,
+                    &behavior,
+                ),
+            ];
+            println!("SmartMoney Bot-Profil: Wer verdient auf Polymarket, und womit?");
+            print_load_stats(&data.stats);
+            println!(
+                "Gruppen: die {candidates} aktivsten Wallets der Stichprobe, getrennt in Bots (mehr als {} Trades in {lookback_days} Tagen) \
+                 und aktive Trader, dazu die Allzeit-Ranglisten nach Gewinn und Volumen. Beträge aus /v2/user-stats all_time_pnl \
+                 (gesamte Laufzeit, USDC): Gesamt = economic_pnl, Handel real. = realisierter Markt- und Kombi-Gewinn, \
+                 Rebates = Maker + Taker, Prämien = Belohnungen, Zinsen, Empfehlungen. Volumen = volume_usdc (laut Doku \
+                 maker-attributiert), Marge = Gesamt / Volumen. Fehlende Werte zählen nicht als null.\n",
+                max_pages_per_wallet * 1000
+            );
+            print!("{}", report::bots_table(&groups));
+            (
+                "bots",
+                serde_json::json!({ "stats": data.stats, "groups": groups }),
             )
         }
     };

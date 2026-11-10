@@ -146,6 +146,20 @@ async fn load_wallet(
     WalletLoad::TooActive
 }
 
+/// True if the wallet has more taker trades in the range than
+/// max_pages_per_wallet pages of 1000 (treated as a bot).
+pub async fn is_too_active(
+    client: &PolymarketClient,
+    wallet: &str,
+    opts: &FullHistoryOptions,
+) -> Result<bool, ApiError> {
+    match load_wallet(client, wallet, opts).await {
+        WalletLoad::Ok(_) => Ok(false),
+        WalletLoad::TooActive => Ok(true),
+        WalletLoad::Failed(e) => Err(e),
+    }
+}
+
 /// Load full histories of the most active sample wallets and merge them
 /// with the sample.
 pub async fn load(
