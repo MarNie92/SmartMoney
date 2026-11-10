@@ -84,13 +84,31 @@ pub fn parse_kind(title: &str) -> Option<Kind> {
 /// ("(KORD)").
 pub fn parse_station(description: &str, resolution_source: &str) -> Option<String> {
     let is_icao = |s: &str| s.len() == 4 && s.chars().all(|c| c.is_ascii_alphanumeric());
-    if let Some(i) = resolution_source.find("ids=") {
-        let id: String = resolution_source[i + 4..]
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric())
-            .collect();
-        if is_icao(&id) {
-            return Some(id.to_uppercase());
+    // aviationweather.gov "...?ids=KORD", weather.gov "...?site=zhcc".
+    for key in ["ids=", "site="] {
+        if let Some(i) = resolution_source.find(key) {
+            let id: String = resolution_source[i + key.len()..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric())
+                .collect();
+            if is_icao(&id) {
+                return Some(id.to_uppercase());
+            }
+        }
+    }
+    // wunderground.com ".../history/daily/cn/jinan/ZSJN" (station last).
+    if resolution_source.contains("wunderground.com") {
+        let last = resolution_source
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or_default();
+        if is_icao(last)
+            && last
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        {
+            return Some(last.to_owned());
         }
     }
     description
@@ -496,6 +514,29 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 11, 9)
         );
         assert_eq!(parse_date("nonsense"), None);
+        assert_eq!(
+            parse_station("", "https://www.weather.gov/wrh/timeseries?site=zhcc").as_deref(),
+            Some("ZHCC")
+        );
+        assert_eq!(
+            parse_station(
+                "",
+                "https://www.wunderground.com/history/daily/cn/jinan/ZSJN"
+            )
+            .as_deref(),
+            Some("ZSJN")
+        );
+        assert_eq!(
+            parse_station(
+                "",
+                "https://www.wunderground.com/history/daily/cn/jinan/date"
+            ),
+            None
+        );
+        assert_eq!(
+            parse_station("recorded by NOAA at the Istanbul Airport", ""),
+            None
+        );
     }
 
     #[test]
