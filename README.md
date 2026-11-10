@@ -7,6 +7,9 @@ orders.**
 
 ## Status
 
+See `ROADMAP.md` for the current plan (insider signals plus mirroring of
+proven wallets, Telegram, paper trading per strategy).
+
 | Milestone | Content | Status |
 |---|---|---|
 | 1 | Repo setup, workspace, config, SQLite schema, docs | done |

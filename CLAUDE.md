@@ -69,6 +69,12 @@ dashboard is reached only via Tailscale (no public port) with a token.
 
 ## Current status
 
+The plan lives in `ROADMAP.md` (phases 1-8); update its checkboxes as work
+progresses. Direction since 2026-11-10: insider signals and mirror signals
+(proven wallets) share one signal pipeline (dashboard, Telegram, paper
+trading per strategy).
+
+
 Milestones 1-3 done.
 - Collector (`smartmoney-collector`): `PolymarketClient` (read-only, pacing +
   backoff), `Collector::poll_once` (dedup via UNIQUE, high-water mark in
