@@ -14,6 +14,8 @@ pub mod fullhistory;
 pub mod report;
 pub mod smart;
 pub mod statusquo;
+pub mod weather;
+pub mod weather_load;
 
 use engine::{evaluate, Evaluated, Variant};
 use report::GroupStats;

@@ -509,4 +509,32 @@ impl PolymarketClient {
             })
             .unwrap_or_default())
     }
+    /// One page (newest first, up to 1000) of all taker trades of an event.
+    pub async fn event_trades_page(
+        &self,
+        event_id: &str,
+        cursor: Option<&str>,
+    ) -> Result<Page<DataTrade>, ApiError> {
+        let mut query = vec![
+            ("event_id", event_id.to_owned()),
+            ("limit", "1000".to_owned()),
+        ];
+        if let Some(c) = cursor {
+            query.push(("cursor", c.to_owned()));
+        }
+        Ok(self
+            .get(&format!("{}/v2/trades", self.data_url), &query)
+            .await?
+            .value)
+    }
+
+    /// GET any JSON URL through the same pacing, retries and (optional)
+    /// cache, e.g. weather data for the backtest.
+    pub async fn get_json(
+        &self,
+        url: &str,
+        query: &[(&str, String)],
+    ) -> Result<serde_json::Value, ApiError> {
+        self.get_value(url, query).await
+    }
 }

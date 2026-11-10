@@ -16,6 +16,7 @@ use smartmoney_backtest::statusquo;
 use smartmoney_backtest::{
     insider_variants, report, run_given_variants, run_variants, VariantResult,
 };
+use smartmoney_backtest::{weather, weather_load};
 use smartmoney_collector::PolymarketClient;
 use smartmoney_core::{Config, MarketCategory};
 use smartmoney_store::Store;
@@ -148,6 +149,20 @@ enum Command {
         /// Minimum size (USDC) of the trade that sets the entry price.
         #[arg(long, default_value_t = 100.0)]
         min_trade_usd: f64,
+    },
+    /// Weather model vs. market on daily highest/lowest temperature markets.
+    Weather {
+        /// Markets that ended within this many days.
+        #[arg(long, default_value_t = 60)]
+        days: i64,
+        /// Days of resolved history used to learn forecast bias and spread.
+        #[arg(long, default_value_t = 45)]
+        history_days: i64,
+        #[arg(long, default_value_t = 10)]
+        min_history: usize,
+        /// Only trades of at least this size set the market price.
+        #[arg(long, default_value_t = 2.0)]
+        min_price_usd: f64,
     },
 }
 
@@ -662,6 +677,75 @@ async fn main() -> anyhow::Result<()> {
             (
                 "status_quo",
                 serde_json::json!({ "markets": data.cases.len(), "status_quo_markets": sq_markets, "status_quo": sq, "control": control }),
+            )
+        }
+        Command::Weather {
+            days,
+            history_days,
+            min_history,
+            min_price_usd,
+        } => {
+            let data = weather_load::load(&client, days, history_days, now).await?;
+            let s = &data.stats;
+            println!("SmartMoney Wetter-Backtest: Wettermodell gegen Marktpreis (Höchst-/Tiefsttemperatur)");
+            println!(
+                "{} Events geladen ({} gesehen, {} nicht auswertbar), {} Stationen ({} ohne Vorhersage), {} Trades.",
+                s.events_used, s.events_seen, s.events_skipped, s.stations, s.stations_without_forecast, s.trades
+            );
+            println!(
+                "Modell: Open-Meteo-Vorhersage (best match), 24 h bzw. 48 h vor der jeweiligen Stunde erstellt, plus Bias und Streuung \
+                 je Station aus den letzten {history_days} bereits aufgelösten Tagen (mind. {min_history}). Entscheidung: Vorlauf 1 Tag um 0 Uhr \
+                 Ortszeit am Tag selbst, Vorlauf 2 Tage um 6 Uhr am Vortag. Marktpreis = letzter Trade ab ${min_price_usd:.0} davor.\n\
+                 Brier = mittlerer quadratischer Fehler der Wahrscheinlichkeiten (kleiner ist besser). Vorteil > 0: Modell genauer als Markt.\n\
+                 Wetten: JA wenn Modell um die Schwelle über dem Markt liegt, NEIN wenn darunter. Taker = Kurs + {:.0} bps + Gebühr \
+                 (0,05 x p x (1-p)); *Maker = Ausführung zum Kurs ohne Gebühr (optimistisch). 95%-Bereich nach Events gruppiert.",
+                cfg.backtest.slippage_bps
+            );
+            let mut leads = Vec::new();
+            for lead in [2u8, 1] {
+                let mcfg = weather::ModelConfig {
+                    lead,
+                    history_days,
+                    min_history,
+                    sd_floor_f: 1.0,
+                    sd_floor_c: 0.6,
+                    min_price_usd,
+                };
+                let obs = weather::observations(&data.events, &data.trades, &data.forecasts, &mcfg);
+                let mut scores = Vec::new();
+                if let Some(c) = weather::compare(&obs) {
+                    scores.push(("Alle".to_owned(), c));
+                }
+                for (label, kind) in [
+                    ("Höchsttemperatur", weather::Kind::High),
+                    ("Tiefsttemperatur", weather::Kind::Low),
+                ] {
+                    let sub: Vec<weather::Observation> =
+                        obs.iter().filter(|o| o.kind == kind).cloned().collect();
+                    if let Some(c) = weather::compare(&sub) {
+                        scores.push((label.to_owned(), c));
+                    }
+                }
+                let strategies: Vec<weather::StrategyResult> = [0.03, 0.05, 0.10, 0.15, 0.20]
+                    .iter()
+                    .filter_map(|t| {
+                        weather::strategy(&obs, *t, 0.05, cfg.backtest.slippage_bps, 10.0)
+                    })
+                    .collect();
+                println!(
+                    "\n== Vorlauf {lead} Tag(e): {} Spannen mit Marktpreis ==",
+                    obs.len()
+                );
+                print!("{}", report::weather_score_table(&scores));
+                println!("\nKalibrierung (Gewinnquote je Wahrscheinlichkeitsbereich):");
+                print!("{}", report::weather_calibration_table(&obs));
+                println!("\nStrategie (Einsatz $10 pro Wette):");
+                print!("{}", report::weather_strategy_table(&strategies));
+                leads.push(serde_json::json!({ "lead": lead, "observations": obs.len(), "scores": scores, "strategies": strategies }));
+            }
+            (
+                "weather",
+                serde_json::json!({ "stats": data.stats, "leads": leads }),
             )
         }
     };
