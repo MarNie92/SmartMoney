@@ -135,3 +135,8 @@ Milestones 1-3 done.
   likely comes from sells (fading overpriced outcomes), which the copy test
   ignores. Next: balanced period-1 sample (select markets ending before the
   split explicitly) and copy sells as buys of the opposite outcome.
+- Balanced smart test 2026-11-10 (30-day windows, 1808 markets, splits
+  270/180/90 d, 206-303 wallets each): rank correlation +0.04 / +0.10 /
+  -0.14, top group P2 edge +1.5 % / +2.2 % / -5.7 %. No persistence; Phase 1
+  gate failed, mirror signals experimental. Copy ROI averages are noisy
+  (longshot outliers); prefer edge metrics.

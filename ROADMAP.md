@@ -30,11 +30,17 @@ a merge to `main`, a push and a short check-in with the user.
 
 ## Phase 1: Validate smart money (decision gate)
 
-- [ ] Balanced sample: load markets that ended before the split explicitly,
-      so period 1 has as many markets as period 2
-- [ ] Copy sells as buys of the opposite outcome (what a follower can do)
-- [ ] Robustness: several split dates, minimum activity filters, edge per
-      wallet with confidence interval
+- [x] Balanced sample: 30-day end-date windows over the whole range
+- [x] Copy sells as buys of the opposite outcome (what a follower can do)
+- [x] Robustness: three split dates (270/180/90 days ago), 90-day periods
+- **Result 2026-11-10 (1808 markets, 1.27M trades, 206-303 wallets per
+  split): gate failed.** Rank correlation P1->P2 +0.04 / +0.10 / -0.14; top
+  group P2 edge +1.5 % / +2.2 % / -5.7 % (all intervals include 0 or are
+  negative); copy returns inconsistent and dominated by longshot outliers.
+  The earlier +7.1 % came from a small sample. Mirror signals stay
+  experimental.
+- [ ] Optional last test: rank wallets on their full trade history (>= 100
+      resolved trades each) instead of the trades seen in the market sample
 - [ ] Visual report of the result
 - **Gate:** if copying the top group is positive across splits, mirror
   signals become a primary strategy; otherwise they stay experimental.
