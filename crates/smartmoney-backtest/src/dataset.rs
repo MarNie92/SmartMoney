@@ -35,8 +35,11 @@ pub struct LoadOptions {
     pub categories: Option<HashSet<MarketCategory>>,
     /// Fetch wallet facts (age, buy history) for candidate trades.
     pub wallets: bool,
-    /// Event pages (50 events each) to scan per tag.
+    /// Event pages (50 events each) to scan per tag and window.
     pub max_event_pages: usize,
+    /// End-date windows `(from, to)`; each tag fills its quota per window.
+    /// `None` = one window over the configured lookback.
+    pub windows: Option<Vec<(i64, i64)>>,
 }
 
 impl Default for LoadOptions {
@@ -45,6 +48,7 @@ impl Default for LoadOptions {
             categories: None,
             wallets: true,
             max_event_pages: 20,
+            windows: None,
         }
     }
 }
@@ -61,12 +65,12 @@ async fn select_markets(
     opts: &LoadOptions,
     now: i64,
 ) -> Result<Vec<Selected>, ApiError> {
-    // Day granularity keeps the cache key stable for a day.
-    let end_max = chrono::DateTime::from_timestamp(now - now % DAY, 0)
-        .unwrap_or_default()
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string();
-    let oldest_end = now - bt.lookback_days as i64 * DAY;
+    // Without explicit windows: one window over the whole lookback, filled
+    // with the most recently ended markets.
+    let windows = opts
+        .windows
+        .clone()
+        .unwrap_or_else(|| vec![(now - bt.lookback_days as i64 * DAY, now)]);
     let groups = bt
         .niche_tags
         .iter()
@@ -80,7 +84,49 @@ async fn select_markets(
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for (tag, quota, control) in groups {
-        let mut taken = 0;
+        let mut tag_total = 0;
+        for (window_start, window_end) in &windows {
+            let taken = select_window(
+                client,
+                bt,
+                opts,
+                tag,
+                quota,
+                control,
+                (*window_start, (*window_end).min(now)),
+                now,
+                &mut seen,
+                &mut out,
+            )
+            .await?;
+            tag_total += taken;
+        }
+        tracing::info!(%tag, markets = tag_total, "selected markets");
+    }
+    Ok(out)
+}
+
+/// Fill one end-date window for one tag; returns the number of markets taken.
+#[allow(clippy::too_many_arguments)]
+async fn select_window(
+    client: &PolymarketClient,
+    bt: &BacktestConfig,
+    opts: &LoadOptions,
+    tag: &str,
+    quota: usize,
+    control: bool,
+    (oldest_end, newest_end): (i64, i64),
+    now: i64,
+    seen: &mut HashSet<String>,
+    out: &mut Vec<Selected>,
+) -> Result<usize, ApiError> {
+    // Day granularity keeps the cache key stable for a day.
+    let end_max = chrono::DateTime::from_timestamp(newest_end - newest_end % DAY, 0)
+        .unwrap_or_default()
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
+    let mut taken = 0;
+    {
         'pages: for page in 0..opts.max_event_pages {
             let events = client
                 .closed_events(tag, &end_max, page * EVENTS_PAGE, EVENTS_PAGE)
@@ -108,7 +154,7 @@ async fn select_markets(
                         && record.clob_token_ids.len() >= 2
                         && record.volume_usd.unwrap_or(0.0) >= bt.min_market_volume_usd
                         && ended >= oldest_end
-                        && ended <= now
+                        && ended <= newest_end
                         && opts
                             .categories
                             .as_ref()
@@ -120,9 +166,8 @@ async fn select_markets(
                 }
             }
         }
-        tracing::info!(%tag, markets = taken, "selected markets");
     }
-    Ok(out)
+    Ok(taken)
 }
 
 /// Where the final payouts came from.

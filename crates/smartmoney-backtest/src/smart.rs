@@ -23,6 +23,10 @@ const DAY: i64 = 86_400;
 pub struct SmartConfig {
     /// Period boundary (epoch seconds).
     pub split_ts: i64,
+    /// Period-1 markets must have ended at or after this time.
+    pub p1_start_ts: i64,
+    /// Period-2 trades must be before this time.
+    pub p2_end_ts: i64,
     /// Period-1 markets must have ended this many days before the split.
     pub resolve_margin_days: i64,
     pub p1_min_trades: usize,
@@ -30,7 +34,8 @@ pub struct SmartConfig {
     pub p2_min_trades: usize,
     /// Number of ranked groups (5 = quintiles).
     pub groups: usize,
-    /// Copy test: follow period-2 BUYs of at least this size.
+    /// Copy test: follow period-2 trades of at least this size. Sells are
+    /// followed by buying the opposite outcome (binary markets only).
     pub copy_min_usd: f64,
     pub follow_delays_minutes: Vec<u64>,
     pub slippage_bps: f64,
@@ -77,6 +82,10 @@ pub struct CopyStats {
     pub filled: usize,
     pub avg_roi: Option<f64>,
     pub markets: usize,
+    pub buy_filled: usize,
+    pub buy_avg_roi: Option<f64>,
+    pub sell_filled: usize,
+    pub sell_avg_roi: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -140,28 +149,38 @@ pub fn spearman(a: &[f64], b: &[f64]) -> Option<f64> {
     (va > 0.0 && vb > 0.0).then(|| cov / (va * vb).sqrt())
 }
 
-/// Follow a trade after a delay at the next trade of the same token.
+/// Follow trade `i` after a delay by buying `outcome`. The entry price comes
+/// from the next trade in the market after the target time; in a binary
+/// market a trade of the other outcome at price p implies 1 - p.
 fn follow_roi(
     trades: &[HistTrade],
     i: usize,
     delay: u64,
+    outcome: i64,
+    binary: bool,
     payout: f64,
-    slippage_bps: f64,
-    fee_bps: f64,
+    cfg: &SmartConfig,
 ) -> Option<f64> {
     let t = &trades[i];
     let target = t.timestamp + (delay * 60) as i64;
-    let next = trades[i + 1..]
-        .iter()
-        .find(|n| n.token_id == t.token_id && n.timestamp >= target)?;
+    let next = trades[i + 1..].iter().find(|n| {
+        n.timestamp >= target
+            && n.outcome_index.is_some()
+            && (binary || n.outcome_index == Some(outcome))
+    })?;
     if next.timestamp - target > 2 * DAY {
         return None;
     }
-    let entry = next.price * (1.0 + slippage_bps / 10_000.0);
+    let price = if next.outcome_index == Some(outcome) {
+        next.price
+    } else {
+        1.0 - next.price
+    };
+    let entry = price * (1.0 + cfg.slippage_bps / 10_000.0);
     if entry <= 0.0 || entry >= 0.999 {
         return None;
     }
-    Some(payout * (1.0 - fee_bps / 10_000.0) / entry - 1.0)
+    Some(payout * (1.0 - cfg.fee_bps / 10_000.0) / entry - 1.0)
 }
 
 pub fn evaluate(cases: &[MarketCase], cfg: &SmartConfig) -> SmartReport {
@@ -173,7 +192,10 @@ pub fn evaluate(cases: &[MarketCase], cfg: &SmartConfig) -> SmartReport {
 
     for case in cases {
         let cid = case.market.condition_id.as_str();
-        let ended_before_split = case.market.end_date.is_some_and(|e| e < p1_cutoff);
+        let ended_before_split = case
+            .market
+            .end_date
+            .is_some_and(|e| e < p1_cutoff && e >= cfg.p1_start_ts);
         for t in &case.trades {
             let Some(edge) = trade_edge(t, &case.payouts) else {
                 continue;
@@ -183,7 +205,7 @@ pub fn evaluate(cases: &[MarketCase], cfg: &SmartConfig) -> SmartReport {
                     p1.entry(&t.wallet).or_default().add(t.usd(), edge, cid);
                     p1_markets.insert(cid);
                 }
-            } else {
+            } else if t.timestamp < cfg.p2_end_ts {
                 p2.entry(&t.wallet).or_default().add(t.usd(), edge, cid);
                 p2_markets.insert(cid);
             }
@@ -262,49 +284,62 @@ pub fn evaluate(cases: &[MarketCase], cfg: &SmartConfig) -> SmartReport {
     }
 }
 
-/// Copy test: follow every period-2 BUY (>= copy_min_usd) of the wallets.
+fn mean(v: &[f64]) -> Option<f64> {
+    (!v.is_empty()).then(|| v.iter().sum::<f64>() / v.len() as f64)
+}
+
+/// Copy test: follow every period-2 trade (>= copy_min_usd) of the wallets.
+/// A BUY is copied as the same buy; a SELL as a buy of the opposite outcome
+/// (binary markets only, since only there the opposite is well defined).
 fn copy_stats(
     cases: &[MarketCase],
     wallets: &HashSet<&str>,
     cfg: &SmartConfig,
     delay: u64,
 ) -> CopyStats {
-    let mut rois = Vec::new();
+    let mut buys = Vec::new();
+    let mut sells = Vec::new();
     let mut markets = HashSet::new();
     for case in cases {
+        let binary = case.payouts.len() == 2;
         for (i, t) in case.trades.iter().enumerate() {
             if t.timestamp < cfg.split_ts
-                || t.side != Side::Buy
+                || t.timestamp >= cfg.p2_end_ts
                 || t.usd() < cfg.copy_min_usd
                 || !wallets.contains(t.wallet.as_str())
             {
                 continue;
             }
-            let Some(payout) = t
-                .outcome_index
-                .and_then(|o| case.payouts.get(o as usize))
-                .copied()
-            else {
+            let Some(own) = t.outcome_index else {
                 continue;
             };
-            if let Some(r) = follow_roi(
-                &case.trades,
-                i,
-                delay,
-                payout,
-                cfg.slippage_bps,
-                cfg.fee_bps,
-            ) {
-                rois.push(r);
+            let outcome = match t.side {
+                Side::Buy => own,
+                Side::Sell if binary => 1 - own,
+                Side::Sell => continue,
+            };
+            let Some(payout) = case.payouts.get(outcome as usize).copied() else {
+                continue;
+            };
+            if let Some(r) = follow_roi(&case.trades, i, delay, outcome, binary, payout, cfg) {
+                match t.side {
+                    Side::Buy => buys.push(r),
+                    Side::Sell => sells.push(r),
+                }
                 markets.insert(case.market.condition_id.as_str());
             }
         }
     }
+    let all: Vec<f64> = buys.iter().chain(&sells).copied().collect();
     CopyStats {
         delay_minutes: delay,
-        filled: rois.len(),
-        avg_roi: (!rois.is_empty()).then(|| rois.iter().sum::<f64>() / rois.len() as f64),
+        filled: all.len(),
+        avg_roi: mean(&all),
         markets: markets.len(),
+        buy_filled: buys.len(),
+        buy_avg_roi: mean(&buys),
+        sell_filled: sells.len(),
+        sell_avg_roi: mean(&sells),
     }
 }
 
@@ -319,6 +354,8 @@ mod tests {
     fn cfg() -> SmartConfig {
         SmartConfig {
             split_ts: SPLIT,
+            p1_start_ts: i64::MIN,
+            p2_end_ts: i64::MAX,
             resolve_margin_days: 3,
             p1_min_trades: 2,
             p1_min_markets: 2,
@@ -457,7 +494,11 @@ mod tests {
         // Copy: good wallet's period-2 buy at 0.4, next trade on tok0 at 0.5.
         let c = &top.copy[0];
         assert_eq!(c.filled, 1);
-        assert!((c.avg_roi.unwrap() - 1.0).abs() < 1e-9); // 1 / 0.5 - 1
+        // Next trade is the bad wallet buying outcome 1 at 0.6 -> outcome 0
+        // implied at 0.4 -> 1 / 0.4 - 1.
+        assert!((c.avg_roi.unwrap() - 1.5).abs() < 1e-9);
+        assert_eq!(c.buy_filled, 1);
+        assert_eq!(c.sell_filled, 0);
     }
 
     #[test]
@@ -475,5 +516,78 @@ mod tests {
         let r = evaluate(&cases, &cfg());
         assert_eq!(r.eligible_wallets, 0);
         assert!(r.groups.is_empty());
+    }
+    #[test]
+    fn sells_are_copied_as_opposite_buys() {
+        let cases = vec![
+            case(
+                "m1",
+                SPLIT - 10 * DAY,
+                1,
+                vec![trade("w", Side::Sell, 0, 0.7, SPLIT - 20 * DAY)],
+            ),
+            case(
+                "m2",
+                SPLIT - 9 * DAY,
+                1,
+                vec![trade("w", Side::Sell, 0, 0.6, SPLIT - 19 * DAY)],
+            ),
+            case(
+                "m3",
+                SPLIT + 10 * DAY,
+                1,
+                vec![
+                    trade("w", Side::Sell, 0, 0.7, SPLIT + DAY),
+                    trade("x", Side::Buy, 1, 0.35, SPLIT + DAY + 60),
+                ],
+            ),
+        ];
+        let mut c = cfg();
+        c.groups = 1;
+        let r = evaluate(&cases, &c);
+        assert_eq!(r.eligible_wallets, 1);
+        let g = &r.groups[0];
+        assert!(
+            (g.p1_edge_avg - 0.65).abs() < 1e-9,
+            "sold losers: {}",
+            g.p1_edge_avg
+        );
+        let copy = &g.copy[0];
+        assert_eq!(copy.sell_filled, 1);
+        assert!((copy.sell_avg_roi.unwrap() - (1.0 / 0.35 - 1.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn period_windows_limit_markets_and_trades() {
+        let cases = vec![
+            case(
+                "old",
+                SPLIT - 100 * DAY,
+                0,
+                vec![
+                    trade("w", Side::Buy, 0, 0.5, SPLIT - 110 * DAY),
+                    trade("w", Side::Buy, 0, 0.5, SPLIT - 105 * DAY),
+                ],
+            ),
+            case(
+                "m1",
+                SPLIT - 10 * DAY,
+                0,
+                vec![trade("w", Side::Buy, 0, 0.5, SPLIT - 20 * DAY)],
+            ),
+            case(
+                "m2",
+                SPLIT + 100 * DAY,
+                0,
+                vec![trade("w", Side::Buy, 0, 0.5, SPLIT + 95 * DAY)],
+            ),
+        ];
+        let mut c = cfg();
+        c.p1_start_ts = SPLIT - 50 * DAY;
+        c.p2_end_ts = SPLIT + 90 * DAY;
+        let r = evaluate(&cases, &c);
+        assert_eq!(r.p1_markets, 1, "old market before the period-1 window");
+        assert_eq!(r.p2_markets, 0, "trade after the period-2 window");
+        assert_eq!(r.eligible_wallets, 0);
     }
 }

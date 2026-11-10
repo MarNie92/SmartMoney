@@ -210,6 +210,16 @@ pub fn smart_table(r: &crate::smart::SmartReport) -> String {
     for d in &delays {
         let _ = write!(header, " {:>15}", format!("Kopie +{d}m"));
     }
+    // Buys vs sells at the second-to-last delay (e.g. 15 min).
+    let split_idx = delays.len().saturating_sub(2);
+    if let Some(d) = delays.get(split_idx) {
+        let _ = write!(
+            header,
+            " {:>13} {:>13}",
+            format!("Käufe +{d}m"),
+            format!("Verk. +{d}m")
+        );
+    }
     let _ = writeln!(s, "{header}");
     let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
     let n = r.groups.len();
@@ -240,6 +250,17 @@ pub fn smart_table(r: &crate::smart::SmartReport) -> String {
                 None => "–".into(),
             };
             let _ = write!(line, " {cell:>15}");
+        }
+        if let Some(c) = g.copy.get(split_idx) {
+            let fmt = |v: Option<f64>, n: usize| {
+                v.map_or("–".into(), |v| format!("{:+.1}% ({n})", v * 100.0))
+            };
+            let _ = write!(
+                line,
+                " {:>13} {:>13}",
+                fmt(c.buy_avg_roi, c.buy_filled),
+                fmt(c.sell_avg_roi, c.sell_filled)
+            );
         }
         let _ = writeln!(s, "{line}");
     }

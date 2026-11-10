@@ -71,13 +71,18 @@ enum Command {
     },
     /// Smart-money persistence: rank wallets in period 1, test in period 2.
     Smart {
-        #[arg(long, default_value_t = 150)]
-        markets_per_tag: usize,
-        #[arg(long, default_value_t = 365)]
-        lookback_days: u64,
-        /// Period split, in days before today (default: half the lookback).
-        #[arg(long)]
-        split_days_ago: Option<i64>,
+        /// Markets per tag and 30-day window (balanced over time).
+        #[arg(long, default_value_t = 15)]
+        markets_per_tag_month: usize,
+        /// Split dates in days before today, comma separated.
+        #[arg(long, value_delimiter = ',', default_values_t = [270i64, 180, 90])]
+        splits: Vec<i64>,
+        /// Length of period 1 (markets ending before the split), in days.
+        #[arg(long, default_value_t = 90)]
+        p1_days: i64,
+        /// Length of period 2 (trades after the split), in days.
+        #[arg(long, default_value_t = 90)]
+        p2_days: i64,
         #[arg(long, default_value_t = 20)]
         p1_min_trades: usize,
         #[arg(long, default_value_t = 5)]
@@ -227,6 +232,7 @@ async fn main() -> anyhow::Result<()> {
                 ])),
                 wallets: true,
                 max_event_pages: 80,
+                windows: None,
             };
             let data = load(&client, &cfg, &opts, now).await?;
             println!(
@@ -241,60 +247,75 @@ async fn main() -> anyhow::Result<()> {
             )
         }
         Command::Smart {
-            markets_per_tag,
-            lookback_days,
-            split_days_ago,
+            markets_per_tag_month,
+            splits,
+            p1_days,
+            p2_days,
             p1_min_trades,
             p1_min_markets,
             p2_min_trades,
             copy_min_usd,
         } => {
-            cfg.backtest.markets_per_niche_tag = markets_per_tag;
-            cfg.backtest.markets_per_control_tag = markets_per_tag;
-            cfg.backtest.lookback_days = lookback_days;
+            let margin_days = 3;
+            let oldest_split = splits.iter().copied().max().unwrap_or(180);
+            let lookback = oldest_split + p1_days + margin_days;
+            cfg.backtest.markets_per_niche_tag = markets_per_tag_month;
+            cfg.backtest.markets_per_control_tag = markets_per_tag_month;
+            cfg.backtest.lookback_days = lookback as u64;
+            // 30-day end-date windows over the whole range: an even sample
+            // over time instead of only the most recently ended markets.
+            let windows: Vec<(i64, i64)> = (0..(lookback + 29) / 30)
+                .map(|k| (now - (k + 1) * 30 * DAY, now - k * 30 * DAY))
+                .collect();
             let opts = LoadOptions {
                 categories: None,
                 wallets: false,
-                max_event_pages: 80,
+                max_event_pages: 40,
+                windows: Some(windows),
             };
             let data = load(&client, &cfg, &opts, now).await?;
-            let split_days = split_days_ago.unwrap_or(lookback_days as i64 / 2);
-            let smart_cfg = SmartConfig {
-                split_ts: now - split_days * DAY,
-                resolve_margin_days: 3,
-                p1_min_trades,
-                p1_min_markets,
-                p2_min_trades,
-                groups: 5,
-                copy_min_usd,
-                follow_delays_minutes: cfg.backtest.follow_delays_minutes.clone(),
-                slippage_bps: cfg.backtest.slippage_bps,
-                fee_bps: cfg.simulation.fee_bps,
-            };
-            let r = smart::evaluate(&data.cases, &smart_cfg);
             println!(
-                "SmartMoney Backtest (Smart-Money-Persistenz, Stichtag vor {split_days} Tagen)"
+                "SmartMoney Backtest (Smart-Money-Persistenz, {} Stichtage, Perioden je {p1_days}/{p2_days} Tage)",
+                splits.len()
             );
             print_load_stats(&data.stats);
             println!(
-                "Periode 1: {} Märkte, die mindestens 3 Tage vor dem Stichtag endeten. Periode 2: Trades ab dem Stichtag in {} Märkten.",
-                r.p1_markets, r.p2_markets
-            );
-            println!(
-                "{} Wallets mit mindestens {p1_min_trades} Trades in {p1_min_markets} Märkten (P1) und {p2_min_trades} Trades (P2). \
-                 Rangkorrelation Edge P1 zu P2: {}.",
-                r.eligible_wallets,
-                r.spearman.map_or("–".into(), |s| format!("{s:+.2}"))
-            );
-            println!(
                 "Edge = Vorsprung pro Trade gegenüber dem Endergebnis (Kauf: Auszahlung - Kurs, Verkauf: Kurs - Auszahlung), \
-                 je Wallet nach Einsatz gewichtet. Gruppen nach Edge P1 sortiert. Kopie +Xm = Ø Rendite beim Nachziehen aller \
-                 Käufe ab ${copy_min_usd:.0} der Gruppe in P2 (Einstiege/Märkte).\n"
+                 je Wallet nach Einsatz gewichtet. Gruppen nach Edge in Periode 1 sortiert (nur Märkte, die mindestens \
+                 {margin_days} Tage vor dem Stichtag endeten). Kopie +Xm = Ø Rendite beim Nachziehen aller Trades ab \
+                 ${copy_min_usd:.0} der Gruppe in Periode 2; Verkäufe als Kauf der Gegenseite (Einstiege/Märkte)."
             );
-            print!("{}", report::smart_table(&r));
+            let mut reports = Vec::new();
+            for split_days in &splits {
+                let split_ts = now - split_days * DAY;
+                let smart_cfg = SmartConfig {
+                    split_ts,
+                    p1_start_ts: split_ts - p1_days * DAY,
+                    p2_end_ts: split_ts + p2_days * DAY,
+                    resolve_margin_days: margin_days,
+                    p1_min_trades,
+                    p1_min_markets,
+                    p2_min_trades,
+                    groups: 5,
+                    copy_min_usd,
+                    follow_delays_minutes: cfg.backtest.follow_delays_minutes.clone(),
+                    slippage_bps: cfg.backtest.slippage_bps,
+                    fee_bps: cfg.simulation.fee_bps,
+                };
+                let r = smart::evaluate(&data.cases, &smart_cfg);
+                println!(
+                    "\n== Stichtag vor {split_days} Tagen: P1 {} Märkte, P2 {} Märkte, {} Wallets, Rangkorrelation {} ==",
+                    r.p1_markets,
+                    r.p2_markets,
+                    r.eligible_wallets,
+                    r.spearman.map_or("–".into(), |s| format!("{s:+.2}"))
+                );
+                print!("{}", report::smart_table(&r));
+                reports.push(serde_json::json!({ "split_days_ago": split_days, "report": r }));
+            }
             (
                 "smart",
-                serde_json::json!({ "stats": data.stats, "split_days_ago": split_days, "report": r }),
+                serde_json::json!({ "stats": data.stats, "splits": reports }),
             )
         }
     };
