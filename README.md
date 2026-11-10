@@ -180,5 +180,10 @@ prints the hit rate, the average entry price (market-implied probability),
 the edge (hit rate minus price), the insider's return, and the return of
 following X minutes later at the next real trade (+ slippage, fees).
 
+Subcommands: `score` (default, compares score variants), `insider` (targeted
+test on personnel, corporate and legal markets over 365 days, trades from
+$500) and `smart` (do wallets that beat the market in period 1 keep doing so
+in period 2; ranking only uses markets that ended before the split).
+
 API responses are cached in `backtest_cache/` (ignored by Git), so reruns
 with other settings are fast. Each run is stored in `backtest_runs`.

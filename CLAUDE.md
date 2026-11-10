@@ -114,3 +114,18 @@ Milestones 1-3 done.
   floor only adds 0.1¢ dust buys. Follow slippage is small (~+1% at 15 min).
   Conclusion: no evidence of a usable signal in a random recent sample;
   insider cases are rare, a targeted niche sample is the next step.
+- Backtest subcommands: `score` (default), `insider` (personnel/corporate/
+  legal only, 365 d, >= $500), `smart` (wallet edge persistence, period split;
+  copy test follows period-2 buys).
+- Insider test 2026-11-10 (1131 niche markets, 14k trades >= $500 in 847
+  markets): overall edge -0.7 %; score buckets not predictive (80-100 bucket:
+  -1.2 % edge, -45 % ROI); "fresh wallet + longshot" exists (60 trades, 16
+  markets) but hit rate 5.0 % vs price 5.8 % -> no edge. Insider score
+  hypothesis rejected for now.
+- Smart test 2026-11-10: only 75 period-1 markets (sample is "most recently
+  ended", so few markets end before the split) -> 64 wallets. Spearman +0.16;
+  top quintile (12 wallets) P1 +15.6 % -> P2 +7.1 % (95 % +4.0..+10.3) =
+  first significant persistence. But copying their buys: -5 %. Their edge
+  likely comes from sells (fading overpriced outcomes), which the copy test
+  ignores. Next: balanced period-1 sample (select markets ending before the
+  split explicitly) and copy sells as buys of the opposite outcome.
