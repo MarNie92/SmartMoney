@@ -13,6 +13,7 @@ pub mod engine;
 pub mod fullhistory;
 pub mod report;
 pub mod smart;
+pub mod statusquo;
 
 use engine::{evaluate, Evaluated, Variant};
 use report::GroupStats;
