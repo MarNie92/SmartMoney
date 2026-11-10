@@ -183,7 +183,9 @@ prints the hit rate, the average entry price (market-implied probability),
 the edge (hit rate minus price), the insider's return, and the return of
 following X minutes later at the next real trade (+ slippage, fees).
 
-Subcommands: `calibration` (price vs. outcome per price bucket, category and
+Subcommands: `weather` (forecast model vs. market on daily temperature
+markets; options `--max-price-age-minutes`, `--halves`), `status-quo`
+(buy NO in deadline markets, fees included), Subcommands: `calibration` (price vs. outcome per price bucket, category and
 time to market end), `bots` (PnL composition and behaviour of bots, active
 traders and leaderboards), plus Subcommands: `score` (default, compares score variants), `insider` (targeted
 test on personnel, corporate and legal markets over 365 days, trades from

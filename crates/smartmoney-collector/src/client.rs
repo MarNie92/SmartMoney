@@ -509,4 +509,72 @@ impl PolymarketClient {
             })
             .unwrap_or_default())
     }
+    /// One page (newest first, up to 1000) of all taker trades of an event.
+    pub async fn event_trades_page(
+        &self,
+        event_id: &str,
+        cursor: Option<&str>,
+    ) -> Result<Page<DataTrade>, ApiError> {
+        let mut query = vec![
+            ("event_id", event_id.to_owned()),
+            ("limit", "1000".to_owned()),
+        ];
+        if let Some(c) = cursor {
+            query.push(("cursor", c.to_owned()));
+        }
+        Ok(self
+            .get(&format!("{}/v2/trades", self.data_url), &query)
+            .await?
+            .value)
+    }
+
+    /// GET any JSON URL through the same pacing, retries and (optional)
+    /// cache, e.g. weather data for the backtest.
+    pub async fn get_json(
+        &self,
+        url: &str,
+        query: &[(&str, String)],
+    ) -> Result<serde_json::Value, ApiError> {
+        self.get_value(url, query).await
+    }
+    /// Closed events with a tag via cursor pagination (Gamma
+    /// events/keyset), most recently ended first. Returns the events and
+    /// the cursor of the next page.
+    pub async fn closed_events_keyset(
+        &self,
+        tag_slug: &str,
+        end_date_max: &str,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<(Vec<GammaEventWithMarkets>, Option<String>), ApiError> {
+        let mut query = vec![
+            ("tag_slug", tag_slug.to_owned()),
+            ("closed", "true".to_owned()),
+            ("order", "endDate".to_owned()),
+            ("ascending", "false".to_owned()),
+            ("end_date_max", end_date_max.to_owned()),
+            ("limit", limit.to_string()),
+        ];
+        if let Some(c) = cursor {
+            query.push(("after_cursor", c.to_owned()));
+        }
+        let raw = self
+            .get_value(&format!("{}/events/keyset", self.gamma_url), &query)
+            .await?;
+        let events = raw
+            .get("events")
+            .and_then(|e| e.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|e| GammaEventWithMarkets::from_value(e).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let next = raw
+            .get("next_cursor")
+            .and_then(|c| c.as_str())
+            .filter(|c| !c.is_empty())
+            .map(str::to_owned);
+        Ok((events, next))
+    }
 }

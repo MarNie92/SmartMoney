@@ -452,6 +452,112 @@ pub fn status_quo_table(title: &str, rows: &[crate::statusquo::SqResult]) -> Str
     s
 }
 
+/// Brier comparison rows (label, comparison).
+pub fn weather_score_table(rows: &[(String, crate::weather::ScoreComparison)]) -> String {
+    let mut s = String::new();
+    let header = format!(
+        "{:<22} {:>8} {:>7} {:>12} {:>12} {:>12} {:>24}",
+        "Gruppe",
+        "Spannen",
+        "Events",
+        "Brier Modell",
+        "Brier Markt",
+        "Vorteil",
+        "95%-Bereich Vorteil"
+    );
+    let _ = writeln!(s, "{header}");
+    let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
+    for (label, c) in rows {
+        let _ = writeln!(
+            s,
+            "{:<22} {:>8} {:>7} {:>12.4} {:>12.4} {:>+12.4} {:>24}",
+            label,
+            c.observations,
+            c.events,
+            c.brier_model,
+            c.brier_market,
+            c.advantage,
+            format!("{:+.4} bis {:+.4}", c.advantage_lo, c.advantage_hi),
+        );
+    }
+    s
+}
+
+/// Strategy rows per edge threshold.
+pub fn weather_strategy_table(rows: &[crate::weather::StrategyResult]) -> String {
+    let mut s = String::new();
+    let header = format!(
+        "{:<10} {:>7} {:>7} {:>9} {:>9} {:>12} {:>22} {:>13} {:>11}",
+        "Schwelle",
+        "Wetten",
+        "Events",
+        "Gewinn%",
+        "Ø Kurs",
+        "Taker-Rend.",
+        "95%-Bereich Taker",
+        "Maker-Rend.*",
+        "Gewinn $10"
+    );
+    let _ = writeln!(s, "{header}");
+    let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
+    for r in rows {
+        let _ = writeln!(
+            s,
+            "{:<10} {:>7} {:>7} {:>9} {:>9} {:>12} {:>22} {:>13} {:>11}",
+            format!("{:.0} Pkt.", r.threshold * 100.0),
+            r.bets,
+            r.events,
+            pct(Some(r.win_rate)),
+            format!("{:.1}¢", r.avg_price * 100.0),
+            signed_pct(Some(r.roi_taker)),
+            format!(
+                "{} bis {}",
+                signed_pct(Some(r.roi_taker_lo)),
+                signed_pct(Some(r.roi_taker_hi))
+            ),
+            signed_pct(Some(r.roi_maker)),
+            usd_compact(r.pnl_taker),
+        );
+    }
+    s
+}
+
+/// Calibration of model and market probabilities in bins.
+pub fn weather_calibration_table(obs: &[crate::weather::Observation]) -> String {
+    let bins = [0.0, 0.05, 0.15, 0.30, 0.50, 0.70, 0.85, 1.0001];
+    let mut s = String::new();
+    let header = format!(
+        "{:<12} {:>9} {:>12} {:>10} {:>9} {:>12} {:>10}",
+        "Wahrsch.", "n Modell", "Ø Modell", "Treffer", "n Markt", "Ø Markt", "Treffer"
+    );
+    let _ = writeln!(s, "{header}");
+    let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
+    for w in bins.windows(2) {
+        let stats = |f: fn(&crate::weather::Observation) -> f64| {
+            let sel: Vec<&crate::weather::Observation> =
+                obs.iter().filter(|o| f(o) >= w[0] && f(o) < w[1]).collect();
+            let n = sel.len();
+            let avg = (n > 0).then(|| sel.iter().map(|o| f(o)).sum::<f64>() / n as f64);
+            let hit = (n > 0).then(|| sel.iter().map(|o| o.outcome).sum::<f64>() / n as f64);
+            (n, avg, hit)
+        };
+        let (nm, am, hm) = stats(|o| o.model);
+        let (nk, ak, hk) = stats(|o| o.market);
+        let _ = writeln!(
+            s,
+            "{:<12} {:>9} {:>12} {:>10} {:>9} {:>12} {:>10}",
+            format!("{:.0}–{:.0} %", w[0] * 100.0, (w[1] * 100.0).min(100.0)),
+            nm,
+            pct(am),
+            pct(hm),
+            nk,
+            pct(ak),
+            pct(hk),
+        );
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

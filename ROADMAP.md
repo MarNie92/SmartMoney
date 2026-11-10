@@ -66,9 +66,10 @@ a merge to `main`, a push and a short check-in with the user.
 
 - [x] Status quo (buy NO in deadline markets): not provably profitable after
       fees; dust prints must be filtered (`--min-trade-usd`)
-- [ ] Own probability model where public data is strong and events are
-      many and independent (candidate: daily weather markets with
-      historical forecasts, no lookahead)
+- [x] Own probability model: daily weather markets (9381 events, 120 days)
+      vs Open-Meteo forecasts. Market more accurate than the model; apparent
+      edge at large disagreements came from stale prices and is negative in
+      the recent half. No edge.
 - [ ] Read-only arbitrage scanner (outcome sums, complementary prices, net
       of fees): how often, how large, how long
 - Leads for forward paper tests: crypto favourites >= 90¢; large favourite

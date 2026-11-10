@@ -172,3 +172,14 @@ Milestones 1-3 done.
   ~2000 independent events. Lead: large (>= $1000) favourite trades at
   95-98¢ in non-deadline markets held >= 7 days won 99/99 (+3.1 %, 61
   events), tail risk unobserved.
+- Weather test 2026-11-10 (`weather`, 9381 temperature events in 120 days,
+  51 stations, 9.8M trades; Open-Meteo previous-runs forecasts lead 1/2 +
+  per-station bias/spread from resolved days): market clearly more accurate
+  than the model (Brier 0.059 vs 0.072 at lead 1). Strategy at >= 20 points
+  disagreement looked like +9.8 % (lead 1) but came from stale last-trade
+  prices: with prices <= 60 min old +0.4 % (CI -7.7..+8.4), and the second
+  half of the period is significantly negative (-9..-11 %). No edge.
+  Station formats changed over time: `ids=` (METAR), weather.gov `site=`,
+  wunderground path; Gamma `/events` offset paging stops at ~2000, use
+  `/events/keyset`. Always check price staleness (`--max-price-age-minutes`)
+  and period halves (`--halves`).
