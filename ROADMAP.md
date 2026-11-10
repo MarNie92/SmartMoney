@@ -62,6 +62,18 @@ a merge to `main`, a push and a short check-in with the user.
   follower cannot copy. Taker fees (rate * (1 - p) of stake) must be part
   of every simulated fill.
 
+## Phase 1c: Strategy tests
+
+- [x] Status quo (buy NO in deadline markets): not provably profitable after
+      fees; dust prints must be filtered (`--min-trade-usd`)
+- [ ] Own probability model where public data is strong and events are
+      many and independent (candidate: daily weather markets with
+      historical forecasts, no lookahead)
+- [ ] Read-only arbitrage scanner (outcome sums, complementary prices, net
+      of fees): how often, how large, how long
+- Leads for forward paper tests: crypto favourites >= 90¢; large favourite
+  trades at 95-98¢ held >= 7 days
+
 ## Phase 2: Signal pipeline
 
 - [ ] `Signal` type and `signals` table: kind (insider / mirror), trade,

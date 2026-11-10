@@ -145,6 +145,9 @@ enum Command {
         /// Also use the niche sample (personnel/corporate/legal, 365 days).
         #[arg(long, default_value_t = true)]
         with_niche: bool,
+        /// Minimum size (USDC) of the trade that sets the entry price.
+        #[arg(long, default_value_t = 100.0)]
+        min_trade_usd: f64,
     },
 }
 
@@ -581,6 +584,7 @@ async fn main() -> anyhow::Result<()> {
             markets_per_tag_month,
             lookback_days,
             with_niche,
+            min_trade_usd,
         } => {
             let opts = balanced_options(&mut cfg, now, lookback_days, markets_per_tag_month);
             let mut data = load(&client, &cfg, &opts, now).await?;
@@ -621,6 +625,7 @@ async fn main() -> anyhow::Result<()> {
                         [1i64, 7, 30].map(|min_days| statusquo::SqRule {
                             band: *band,
                             min_days,
+                            min_trade_usd,
                         })
                     })
                     .collect();
@@ -638,7 +643,7 @@ async fn main() -> anyhow::Result<()> {
                 data.cases.len()
             );
             println!(
-                "Regel: pro Markt einmal NEIN kaufen, beim ersten Trade mit NEIN-Kurs im Band und mindestens N Tagen bis Marktende; \
+                "Regel: pro Markt einmal NEIN kaufen, beim ersten Trade ab ${min_trade_usd:.0} mit NEIN-Kurs im Band und mindestens N Tagen bis Marktende; \
                  halten bis zur Auflösung. Kosten: +{:.0} bps Slippage und Polymarket-Taker-Gebühr (Satz x p x (1-p), \
                  4-7 % je Kategorie). Einsatz ${stake:.0} pro Trade. 95%-Bereich nach Events gruppiert.",
                 cfg.backtest.slippage_bps

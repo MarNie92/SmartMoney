@@ -162,3 +162,13 @@ Milestones 1-3 done.
   $578M almost all from directional trading, half sports, median trade
   $167 (survivor-selected). Volume top 200: 75 % profitable, ~36 % of profit
   from rebates/rewards.
+- Status-quo test 2026-11-10 (`status-quo`, 2702 markets, 425 deadline
+  markets "Will X ... by <date>?"; buy NO once, fees + 50 bps slippage):
+  without a minimum entry trade size, dust prints at odd prices bias the
+  entry heavily (NO at 99¢ "won" only 92 %); use `--min-trade-usd` (default
+  $100). With $100: returns -9 % to +1 %, most intervals include 0; best
+  row NO 98-99.5¢ with >= 30 days left +0.9 % (41 markets) = roughly the
+  time value of money. Not provably profitable; detecting +1 % needs
+  ~2000 independent events. Lead: large (>= $1000) favourite trades at
+  95-98¢ in non-deadline markets held >= 7 days won 99/99 (+3.1 %, 61
+  events), tail risk unobserved.

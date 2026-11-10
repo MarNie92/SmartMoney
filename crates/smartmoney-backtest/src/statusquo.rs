@@ -76,6 +76,9 @@ pub struct SqRule {
     pub band: (f64, f64),
     /// Minimum days between entry and market end.
     pub min_days: i64,
+    /// Minimum size (USDC) of the trade that sets the entry price; tiny
+    /// prints at odd prices are not a price one could have traded at.
+    pub min_trade_usd: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -103,7 +106,8 @@ pub fn entry(case: &MarketCase, rule: &SqRule, slippage_bps: f64) -> Option<Entr
     case.trades.iter().find_map(|t| {
         let idx = t.outcome_index? as usize;
         let no_price = if idx == no { t.price } else { 1.0 - t.price };
-        let ok = no_price >= rule.band.0
+        let ok = t.usd() >= rule.min_trade_usd
+            && no_price >= rule.band.0
             && no_price < rule.band.1
             && end - t.timestamp >= rule.min_days * DAY;
         if !ok {
@@ -326,6 +330,7 @@ mod tests {
         let rule = SqRule {
             band: (0.90, 0.98),
             min_days: 30,
+            min_trade_usd: 0.0,
         };
         let e = entry(&c, &rule, 0.0).unwrap();
         assert_eq!(e.entered_at, DAY);
@@ -337,6 +342,7 @@ mod tests {
         let late = SqRule {
             band: (0.90, 0.98),
             min_days: 100,
+            min_trade_usd: 0.0,
         };
         assert!(entry(&c, &late, 0.0).is_none());
     }
@@ -381,11 +387,27 @@ mod tests {
         let rules = vec![SqRule {
             band: (0.90, 0.95),
             min_days: 1,
+            min_trade_usd: 0.0,
         }];
         let (sq, control) = evaluate(&cases, &rules, 0.0, 100.0);
         assert_eq!(sq.len(), 1);
         assert_eq!(control.len(), 1);
         assert!(sq[0].roi > 0.0);
         assert!((control[0].roi + 1.0).abs() < 1e-9);
+    }
+    #[test]
+    fn entry_ignores_tiny_trades() {
+        let end = 100 * DAY;
+        let m = market("Will X happen by June?", MarketCategory::Politics, "e", end);
+        let mut dust = trade(1, 0.99, 0);
+        dust.size = 1.0; // $0.99 print
+        let c = case(m, true, vec![dust, trade(1, 0.93, DAY)]);
+        let rule = SqRule {
+            band: (0.90, 0.995),
+            min_days: 1,
+            min_trade_usd: 50.0,
+        };
+        let e = entry(&c, &rule, 0.0).unwrap();
+        assert_eq!(e.entered_at, DAY, "dust print skipped");
     }
 }
