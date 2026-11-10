@@ -537,4 +537,44 @@ impl PolymarketClient {
     ) -> Result<serde_json::Value, ApiError> {
         self.get_value(url, query).await
     }
+    /// Closed events with a tag via cursor pagination (Gamma
+    /// events/keyset), most recently ended first. Returns the events and
+    /// the cursor of the next page.
+    pub async fn closed_events_keyset(
+        &self,
+        tag_slug: &str,
+        end_date_max: &str,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<(Vec<GammaEventWithMarkets>, Option<String>), ApiError> {
+        let mut query = vec![
+            ("tag_slug", tag_slug.to_owned()),
+            ("closed", "true".to_owned()),
+            ("order", "endDate".to_owned()),
+            ("ascending", "false".to_owned()),
+            ("end_date_max", end_date_max.to_owned()),
+            ("limit", limit.to_string()),
+        ];
+        if let Some(c) = cursor {
+            query.push(("after_cursor", c.to_owned()));
+        }
+        let raw = self
+            .get_value(&format!("{}/events/keyset", self.gamma_url), &query)
+            .await?;
+        let events = raw
+            .get("events")
+            .and_then(|e| e.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|e| GammaEventWithMarkets::from_value(e).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let next = raw
+            .get("next_cursor")
+            .and_then(|c| c.as_str())
+            .filter(|c| !c.is_empty())
+            .map(str::to_owned);
+        Ok((events, next))
+    }
 }

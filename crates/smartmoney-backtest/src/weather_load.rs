@@ -91,9 +91,11 @@ async fn load_events(
     let oldest = now - days * DAY;
     let mut out = Vec::new();
     let mut seen = HashSet::new();
+    // Cursor pagination: offset paging on /events stops at ~2000 events.
+    let mut cursor: Option<String> = None;
     'pages: for page in 0..MAX_EVENT_PAGES {
-        let events = client
-            .closed_events("weather", &end_max, page * EVENTS_PAGE, EVENTS_PAGE)
+        let (events, next) = client
+            .closed_events_keyset("weather", &end_max, cursor.as_deref(), EVENTS_PAGE)
             .await?;
         if events.is_empty() {
             break;
@@ -120,6 +122,10 @@ async fn load_events(
         }
         if page % 10 == 9 {
             tracing::info!(page, events = out.len(), "weather events loaded");
+        }
+        match next {
+            Some(c) => cursor = Some(c),
+            None => break,
         }
     }
     Ok(out)
