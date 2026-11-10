@@ -258,6 +258,9 @@ pub struct ModelConfig {
     pub sd_floor_c: f64,
     /// Only trades of at least this size set the market price.
     pub min_price_usd: f64,
+    /// Ignore prices older than this before the decision (seconds);
+    /// `None` = any age.
+    pub max_price_age: Option<i64>,
 }
 
 /// One bucket observation: model and market probability plus the outcome.
@@ -340,7 +343,13 @@ pub fn observations(
         for (b, p) in e.buckets.iter().zip(probs) {
             let Some(market) = trades.get(&b.condition_id).and_then(|ts| {
                 ts.iter()
-                    .filter(|t| t.timestamp <= decision && t.usd >= cfg.min_price_usd)
+                    .filter(|t| {
+                        t.timestamp <= decision
+                            && t.usd >= cfg.min_price_usd
+                            && cfg
+                                .max_price_age
+                                .is_none_or(|age| t.timestamp >= decision - age)
+                    })
                     .max_by_key(|t| t.timestamp)
                     .map(|t| t.yes_price)
             }) else {
@@ -716,6 +725,7 @@ mod tests {
             sd_floor_f: 1.0,
             sd_floor_c: 0.6,
             min_price_usd: 2.0,
+            max_price_age: None,
         };
         let obs = observations(&events, &trades, &forecasts, &cfg);
         let t: Vec<&Observation> = obs.iter().filter(|o| o.event_id == "t").collect();

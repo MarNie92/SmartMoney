@@ -163,6 +163,13 @@ enum Command {
         /// Only trades of at least this size set the market price.
         #[arg(long, default_value_t = 2.0)]
         min_price_usd: f64,
+        /// Only prices at most this old at the decision time (minutes).
+        #[arg(long)]
+        max_price_age_minutes: Option<i64>,
+        /// Also report the strategy separately for the first and second half
+        /// of the period (by event date).
+        #[arg(long)]
+        halves: bool,
     },
 }
 
@@ -684,6 +691,8 @@ async fn main() -> anyhow::Result<()> {
             history_days,
             min_history,
             min_price_usd,
+            max_price_age_minutes,
+            halves,
         } => {
             let data = weather_load::load(&client, days, history_days, now).await?;
             let s = &data.stats;
@@ -710,6 +719,7 @@ async fn main() -> anyhow::Result<()> {
                     sd_floor_f: 1.0,
                     sd_floor_c: 0.6,
                     min_price_usd,
+                    max_price_age: max_price_age_minutes.map(|m| m * 60),
                 };
                 let obs = weather::observations(&data.events, &data.trades, &data.forecasts, &mcfg);
                 let mut scores = Vec::new();
@@ -741,6 +751,36 @@ async fn main() -> anyhow::Result<()> {
                 print!("{}", report::weather_calibration_table(&obs));
                 println!("\nStrategie (Einsatz $10 pro Wette):");
                 print!("{}", report::weather_strategy_table(&strategies));
+                if halves && !obs.is_empty() {
+                    let mut dates: Vec<_> = obs.iter().map(|o| o.date).collect();
+                    dates.sort();
+                    let mid = dates[dates.len() / 2];
+                    for (label, first) in [("erste Hälfte", true), ("zweite Hälfte", false)] {
+                        let part: Vec<weather::Observation> = obs
+                            .iter()
+                            .filter(|o| (o.date < mid) == first)
+                            .cloned()
+                            .collect();
+                        let rows: Vec<weather::StrategyResult> = [0.10, 0.15, 0.20]
+                            .iter()
+                            .filter_map(|t| {
+                                weather::strategy(&part, *t, 0.05, cfg.backtest.slippage_bps, 10.0)
+                            })
+                            .collect();
+                        println!(
+                            "\nStrategie, {label} ({} bis {}):",
+                            part.iter()
+                                .map(|o| o.date)
+                                .min()
+                                .map_or("–".into(), |d| d.to_string()),
+                            part.iter()
+                                .map(|o| o.date)
+                                .max()
+                                .map_or("–".into(), |d| d.to_string())
+                        );
+                        print!("{}", report::weather_strategy_table(&rows));
+                    }
+                }
                 leads.push(serde_json::json!({ "lead": lead, "observations": obs.len(), "scores": scores, "strategies": strategies }));
             }
             (
