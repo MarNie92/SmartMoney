@@ -60,13 +60,17 @@ pub struct WeatherEvent {
     pub buckets: Vec<Bucket>,
 }
 
-/// One trade of a bucket market: (condition_id, timestamp, YES price, usd).
+/// One taker trade of a bucket market (stored per condition id).
 #[derive(Debug, Clone, PartialEq)]
 pub struct BucketTrade {
-    pub condition_id: String,
     pub timestamp: i64,
+    /// Price expressed for the YES outcome.
     pub yes_price: f64,
     pub usd: f64,
+    /// Index into `WeatherData::wallets` (compact: millions of trades).
+    pub wallet: u32,
+    /// +1 = the trade is long YES (buy YES / sell NO), -1 = short YES.
+    pub direction: i8,
 }
 
 pub fn parse_kind(title: &str) -> Option<Kind> {
@@ -697,21 +701,24 @@ mod tests {
             "t-1".to_string(),
             vec![
                 BucketTrade {
-                    condition_id: "t-1".into(),
+                    wallet: 0,
+                    direction: 1,
                     timestamp: decision - 60,
                     yes_price: 0.30,
                     usd: 10.0,
                 },
                 // After the decision time: must be ignored.
                 BucketTrade {
-                    condition_id: "t-1".into(),
+                    wallet: 0,
+                    direction: 1,
                     timestamp: decision + 60,
                     yes_price: 0.90,
                     usd: 10.0,
                 },
                 // Dust before the decision: ignored by the size filter.
                 BucketTrade {
-                    condition_id: "t-1".into(),
+                    wallet: 0,
+                    direction: 1,
                     timestamp: decision - 30,
                     yes_price: 0.01,
                     usd: 0.5,
