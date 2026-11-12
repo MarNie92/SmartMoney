@@ -117,7 +117,7 @@ If any check fails: stop the strategy search (no paper trading).
       day itself, right after the hourly METAR observations (:51-:53),
       mostly 10-15 local time, mid-priced buckets. Their information source
       is public: live station observations (nowcasting).
-- [ ] Nowcast backtest (`weather-nowcast`), pre-registered 2026-11-12 before
+- [x] Nowcast backtest (`weather-nowcast`), pre-registered 2026-11-12 before
       the first run: decision at 12:58 local on the event day (PRIMARY,
       highest and lowest markets together); 10:58, 14:58 and 16:58 are
       reported for information only and cannot pass the test. Model:
@@ -129,6 +129,17 @@ If any check fails: stop the strategy search (no paper trading).
       checks of Phase 1d (Brier interval > 0 overall and in both halves,
       fresh prices, threshold chosen on half 1 profitable on half 2 after
       fee 0.05 x p x (1-p) and 50 bps slippage).
+      **Result: FAILED.** 12:58 primary: Brier model 0.1231 vs market
+      0.0862 (advantage -0.037, interval below 0 in both halves); half-2
+      return +1.6 % (interval -9.8..+13.0). Every other hour is also worse
+      than the market. Diagnostic (`weather-truth-check`): observed IEM
+      extremes fall in the winning bucket for 98.6 % of US (F) events but
+      only 92.1 % of C events (off by one bucket at rounding edges).
+      Exploratory US-only rerun (chosen after seeing results, not
+      confirmatory): still clearly worse than the market at every hour
+      (12:58 advantage -0.031). The market already prices live station
+      data faster and more precisely than hourly METAR + 24 h old
+      forecasts.
 
 ## Phase 2: Signal pipeline
 
