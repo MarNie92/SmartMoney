@@ -117,10 +117,18 @@ If any check fails: stop the strategy search (no paper trading).
       day itself, right after the hourly METAR observations (:51-:53),
       mostly 10-15 local time, mid-priced buckets. Their information source
       is public: live station observations (nowcasting).
-- [ ] Nowcast backtest: during the event day, combine the observed running
-      max/min (routine METARs up to the decision time) with the remaining
-      hours of the forecast; compare with fresh market prices; same
-      pre-registered criterion as Phase 1d.
+- [ ] Nowcast backtest (`weather-nowcast`), pre-registered 2026-11-12 before
+      the first run: decision at 12:58 local on the event day (PRIMARY,
+      highest and lowest markets together); 10:58, 14:58 and 16:58 are
+      reported for information only and cannot pass the test. Model:
+      observed extreme of routine METARs up to the decision (hard bound) +
+      mean of 7 models' hourly forecasts for the remaining hours (issued
+      >= 24 h earlier), corrected by the station's error of that quantity
+      at that hour over the last 60 resolved days. Market price: last trade
+      >= $2 within 30 minutes before the decision. Success = all four
+      checks of Phase 1d (Brier interval > 0 overall and in both halves,
+      fresh prices, threshold chosen on half 1 profitable on half 2 after
+      fee 0.05 x p x (1-p) and 50 bps slippage).
 
 ## Phase 2: Signal pipeline
 

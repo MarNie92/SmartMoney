@@ -11,6 +11,7 @@ use smartmoney_backtest::bots::{self, PnlBreakdown};
 use smartmoney_backtest::calibration;
 use smartmoney_backtest::dataset::{self, Dataset, LoadOptions};
 use smartmoney_backtest::fullhistory::{self, FullHistoryOptions};
+use smartmoney_backtest::nowcast;
 use smartmoney_backtest::smart::{self, SmartConfig};
 use smartmoney_backtest::statusquo;
 use smartmoney_backtest::{
@@ -217,6 +218,18 @@ enum Command {
         /// Minimum trades for a wallet to be ranked.
         #[arg(long, default_value_t = 300)]
         min_trades: usize,
+    },
+    /// Nowcast backtest on the event day: observed extreme so far plus the
+    /// forecast for the remaining hours (pre-registered criterion at 12:58).
+    WeatherNowcast {
+        #[arg(long, default_value_t = 120)]
+        days: i64,
+        #[arg(long, default_value_t = 60)]
+        history_days: i64,
+        #[arg(long, default_value_t = 20)]
+        min_history: usize,
+        #[arg(long, default_value_t = 1.15)]
+        sd_inflation: f64,
     },
 }
 
@@ -1078,6 +1091,65 @@ async fn main() -> anyhow::Result<()> {
                 "weather_fingerprint",
                 serde_json::json!({ "top_wallets": wallets, "tables": json_tables }),
             )
+        }
+        Command::WeatherNowcast {
+            days,
+            history_days,
+            min_history,
+            sd_inflation,
+        } => {
+            let data = weather_load::load(&client, days, history_days, now).await?;
+            let stations =
+                weather_load::station_data_v2(&client, &data.events, history_days).await?;
+            println!(
+                "SmartMoney Nowcast-Backtest: am Markttag, nach der stündlichen METAR-Messung"
+            );
+            println!(
+                "{} Events, {} Stationen. Modell: gemessenes Maximum/Minimum bis zur Entscheidung (harte Grenze) + \
+                 Vorhersage der restlichen Stunden (Mittel aus 7 Modellen, mind. 24 h alt), korrigiert um den Fehler \
+                 dieser Station zu dieser Uhrzeit aus den letzten {history_days} aufgelösten Tagen. Marktpreis: letzter \
+                 Trade ab $2 in den 30 Minuten vor der Entscheidung. Gebühr 0,05 x p x (1-p), +{:.0} bps Slippage.",
+                data.events.len(),
+                stations.len(),
+                cfg.backtest.slippage_bps
+            );
+            let mut results = Vec::new();
+            for (hour, primary) in [(12u32, true), (10, false), (14, false), (16, false)] {
+                let ncfg = nowcast::NowcastConfig {
+                    decision_hour: hour,
+                    history_days,
+                    min_history,
+                    sd_inflation,
+                    sd_floor_f: 0.5,
+                    sd_floor_c: 0.3,
+                    min_price_usd: 2.0,
+                    max_price_age: 30 * 60,
+                };
+                let obs = nowcast::observations(&data.events, &data.trades, &stations, &ncfg);
+                let crit = weather_v2::criterion(
+                    &obs,
+                    true,
+                    &[0.03, 0.05, 0.10, 0.15, 0.20],
+                    200,
+                    0.05,
+                    cfg.backtest.slippage_bps,
+                );
+                println!(
+                    "\n== Entscheidung {hour}:58 Ortszeit{}: {} Spannen mit frischem Preis ==",
+                    if primary {
+                        " (PRIMÄRER TEST, entscheidet)"
+                    } else {
+                        " (nur zur Information)"
+                    },
+                    obs.len()
+                );
+                println!("Kalibrierung (Gewinnquote je Wahrscheinlichkeitsbereich):");
+                print!("{}", report::weather_calibration_table(&obs));
+                println!();
+                print!("{}", report::criterion_table(&crit));
+                results.push(serde_json::json!({ "hour": hour, "primary": primary, "observations": obs.len(), "criterion": crit }));
+            }
+            ("weather_nowcast", serde_json::json!({ "results": results }))
         }
     };
 
