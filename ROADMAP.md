@@ -102,7 +102,14 @@ Success only if ALL hold (decided before the first run):
 
 If any check fails: stop the strategy search (no paper trading).
 
-- [ ] Implement and run
+- [x] Implemented and run (2026-11-12, 9461 events, 51 stations, 50 with
+      184 days of METAR observations): **FAILED all accuracy checks.**
+      Lead 1 (fresh prices): Brier model 0.1034 vs market 0.0908, advantage
+      -0.0126 (-0.0136..-0.0115); worse in both halves; threshold 20 pts
+      chosen on half 1 (+19.2 %) gives -7.5 % on half 2. Lead 2 likewise
+      (-0.0104). The market is much sharper than the model (market puts
+      50-70 % on 2180 buckets and is calibrated; the model rarely exceeds
+      50 %). Per the pre-registered rule: strategy search stopped.
 
 ## Phase 2: Signal pipeline
 
