@@ -31,7 +31,10 @@ pub struct WeatherLoadStats {
 
 pub struct WeatherData {
     pub events: Vec<WeatherEvent>,
+    /// Trades per bucket condition id, sorted by time.
     pub trades: HashMap<String, Vec<BucketTrade>>,
+    /// Wallet addresses; `BucketTrade::wallet` indexes into this.
+    pub wallets: Vec<String>,
     pub forecasts: HashMap<String, StationForecasts>,
     pub stats: WeatherLoadStats,
 }
@@ -232,6 +235,7 @@ pub async fn load(
         return Ok(WeatherData {
             events,
             trades: HashMap::new(),
+            wallets: Vec::new(),
             forecasts: HashMap::new(),
             stats,
         });
@@ -305,6 +309,8 @@ pub async fn load(
         })
         .buffer_unordered(CONCURRENCY);
     let mut trades: HashMap<String, Vec<BucketTrade>> = HashMap::new();
+    let mut wallets: Vec<String> = Vec::new();
+    let mut wallet_ids: HashMap<String, u32> = HashMap::new();
     let mut done = 0;
     while let Some(r) = results.next().await {
         done += 1;
@@ -315,21 +321,28 @@ pub async fn load(
                     else {
                         continue;
                     };
-                    let yes_price = if idx as usize == *yes {
-                        t.price
-                    } else {
-                        1.0 - t.price
+                    let on_yes = idx as usize == *yes;
+                    let yes_price = if on_yes { t.price } else { 1.0 - t.price };
+                    let is_buy = t.side.eq_ignore_ascii_case("BUY");
+                    let direction = if on_yes == is_buy { 1 } else { -1 };
+                    let wallet_key = t.proxy_wallet.to_lowercase();
+                    let wallet = match wallet_ids.get(&wallet_key) {
+                        Some(id) => *id,
+                        None => {
+                            let id = wallets.len() as u32;
+                            wallets.push(wallet_key.clone());
+                            wallet_ids.insert(wallet_key, id);
+                            id
+                        }
                     };
                     stats.trades += 1;
-                    trades
-                        .entry(t.condition_id.clone())
-                        .or_default()
-                        .push(BucketTrade {
-                            condition_id: t.condition_id,
-                            timestamp: t.timestamp,
-                            yes_price,
-                            usd: t.size * t.price,
-                        });
+                    trades.entry(t.condition_id).or_default().push(BucketTrade {
+                        timestamp: t.timestamp,
+                        yes_price,
+                        usd: t.size * t.price,
+                        wallet,
+                        direction,
+                    });
                 }
             }
             Err(e) => tracing::warn!(error = %e, "event trades skipped"),
@@ -338,10 +351,14 @@ pub async fn load(
             tracing::info!(done, "event trades loaded");
         }
     }
+    for list in trades.values_mut() {
+        list.sort_by_key(|t| t.timestamp);
+    }
 
     Ok(WeatherData {
         events,
         trades,
+        wallets,
         forecasts,
         stats,
     })

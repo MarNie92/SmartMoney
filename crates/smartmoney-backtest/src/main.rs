@@ -16,7 +16,7 @@ use smartmoney_backtest::statusquo;
 use smartmoney_backtest::{
     insider_variants, report, run_given_variants, run_variants, VariantResult,
 };
-use smartmoney_backtest::{weather, weather_load};
+use smartmoney_backtest::{weather, weather_experts, weather_load};
 use smartmoney_collector::PolymarketClient;
 use smartmoney_core::{Config, MarketCategory};
 use smartmoney_store::Store;
@@ -170,6 +170,24 @@ enum Command {
         /// of the period (by event date).
         #[arg(long)]
         halves: bool,
+    },
+    /// Weather experts: rank wallets in temperature markets, test
+    /// persistence and copy returns; optionally profile one wallet.
+    WeatherExperts {
+        #[arg(long, default_value_t = 120)]
+        days: i64,
+        /// Profile these wallets over the whole period (comma separated).
+        #[arg(long, value_delimiter = ',')]
+        wallet: Vec<String>,
+        #[arg(long, default_value_t = 100)]
+        p1_min_trades: usize,
+        #[arg(long, default_value_t = 20)]
+        p1_min_events: usize,
+        #[arg(long, default_value_t = 50)]
+        p2_min_trades: usize,
+        /// Copy only trades of at least this size.
+        #[arg(long, default_value_t = 10.0)]
+        copy_min_usd: f64,
     },
 }
 
@@ -786,6 +804,68 @@ async fn main() -> anyhow::Result<()> {
             (
                 "weather",
                 serde_json::json!({ "stats": data.stats, "leads": leads }),
+            )
+        }
+        Command::WeatherExperts {
+            days,
+            wallet,
+            p1_min_trades,
+            p1_min_events,
+            p2_min_trades,
+            copy_min_usd,
+        } => {
+            let data = weather_load::load(&client, days, 45, now).await?;
+            let mut dates: Vec<_> = data.events.iter().map(|e| e.date).collect();
+            dates.sort();
+            let split_date = dates.get(dates.len() / 2).copied().unwrap_or_default();
+            let ecfg = weather_experts::ExpertConfig {
+                split_date,
+                p1_min_trades,
+                p1_min_events,
+                p2_min_trades,
+                groups: 5,
+                top_n: 20,
+                copy_min_usd,
+                delays_minutes: vec![0, 1, 5, 15, 60],
+                slippage_bps: cfg.backtest.slippage_bps,
+                fee_rate: 0.05,
+            };
+            println!("SmartMoney Wetter-Experten: Lassen sich gute Wetter-Trader im Voraus erkennen und kopieren?");
+            println!(
+                "{} Temperatur-Events, {} Wallets, {} Trades. Periode 1: Events vor {split_date}, Periode 2: ab {split_date}.",
+                data.events.len(),
+                data.wallets.len(),
+                data.stats.trades
+            );
+            println!(
+                "Edge = Vorsprung pro Trade gegenüber dem Ergebnis (Prozentpunkte, nach Einsatz gewichtet). Bewertet werden Wallets \
+                 mit mind. {p1_min_trades} Trades in {p1_min_events} Events (P1) und {p2_min_trades} Trades (P2). Kopie +X min = Ø Rendite, \
+                 wenn man jedem Trade ab ${copy_min_usd:.0} der Gruppe in P2 nach X Minuten zum nächsten echten Kurs derselben Spanne \
+                 folgt (+{:.0} bps Slippage, Gebühr 0,05 x p x (1-p)); in Klammern 95%-Bereich nach Events.\n",
+                cfg.backtest.slippage_bps
+            );
+            for w in &wallet {
+                match weather_experts::profile_wallet(
+                    &data.events,
+                    &data.trades,
+                    &data.wallets,
+                    w,
+                    &ecfg,
+                ) {
+                    Some(p) => print!("{}", report::wallet_profile_table(&p)),
+                    None => println!("Wallet {w}: keine Trades in den geladenen Wetter-Märkten."),
+                }
+            }
+            let r = weather_experts::evaluate(&data.events, &data.trades, &ecfg);
+            println!(
+                "\n{} Wallets bewertet, Rangkorrelation Edge P1 zu P2: {}",
+                r.eligible,
+                r.spearman.map_or("–".into(), |s| format!("{s:+.2}"))
+            );
+            print!("{}", report::experts_table(&r));
+            (
+                "weather_experts",
+                serde_json::json!({ "split_date": split_date, "report": r }),
             )
         }
     };

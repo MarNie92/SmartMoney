@@ -558,6 +558,81 @@ pub fn weather_calibration_table(obs: &[crate::weather::Observation]) -> String 
     s
 }
 
+fn copy_cell(c: &crate::weather_experts::CopyResult) -> String {
+    match (c.roi, c.roi_lo, c.roi_hi) {
+        (Some(r), Some(lo), Some(hi)) => format!(
+            "{:+.1}% ({:+.0}..{:+.0}) n={}",
+            r * 100.0,
+            lo * 100.0,
+            hi * 100.0,
+            c.copies
+        ),
+        _ => "–".into(),
+    }
+}
+
+/// Weather expert groups: persistence and copy returns.
+pub fn experts_table(r: &crate::weather_experts::ExpertReport) -> String {
+    let mut s = String::new();
+    let delays: Vec<u64> = r
+        .groups
+        .first()
+        .map(|g| g.copy.iter().map(|c| c.delay_minutes).collect())
+        .unwrap_or_default();
+    let mut header = format!(
+        "{:<18} {:>8} {:>9} {:>9} {:>20} {:>9}",
+        "Gruppe", "Wallets", "Edge P1", "Edge P2", "95%-Bereich P2", "Trades P2"
+    );
+    for d in &delays {
+        let _ = write!(header, " {:>27}", format!("Kopie +{d} min"));
+    }
+    let _ = writeln!(s, "{header}");
+    let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
+    for g in &r.groups {
+        let mut line = format!(
+            "{:<18} {:>8} {:>9} {:>9} {:>20} {:>9}",
+            g.label,
+            g.wallets,
+            signed_pct(Some(g.p1_edge)),
+            signed_pct(Some(g.p2_edge)),
+            format!(
+                "{} bis {}",
+                signed_pct(Some(g.p2_edge_lo)),
+                signed_pct(Some(g.p2_edge_hi))
+            ),
+            g.p2_trades,
+        );
+        for c in &g.copy {
+            let _ = write!(line, " {:>27}", copy_cell(c));
+        }
+        let _ = writeln!(s, "{line}");
+    }
+    s
+}
+
+/// One wallet: edge and copy returns over the whole period.
+pub fn wallet_profile_table(p: &crate::weather_experts::WalletProfile) -> String {
+    let mut s = String::new();
+    let _ = writeln!(
+        s,
+        "Wallet {}: {} Trades in {} Events, Umsatz {}, Edge {} (nach Einsatz gewichtet)",
+        p.wallet,
+        p.trades,
+        p.events,
+        usd_compact(p.usd),
+        signed_pct(Some(p.edge))
+    );
+    for c in &p.copy {
+        let _ = writeln!(
+            s,
+            "   Kopieren nach {:>2} min: {}",
+            c.delay_minutes,
+            copy_cell(c)
+        );
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

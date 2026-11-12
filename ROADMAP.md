@@ -72,7 +72,12 @@ a merge to `main`, a push and a short check-in with the user.
       the recent half. No edge.
 - [ ] Read-only arbitrage scanner (outcome sums, complementary prices, net
       of fees): how often, how large, how long
-- Leads for forward paper tests: crypto favourites >= 90¢; large favourite
+- [x] Weather experts: top-20 weather wallets keep a significant edge
+      (+2.9 %); copying them within 1-15 min shows +2.4..+4.4 % after fees,
+      not yet significant. Single star wallets are not copyable (edge gone
+      within a minute).
+- Leads for forward paper tests: copy rolling top-20 weather wallets (strongest);
+  crypto favourites >= 90¢; large favourite
   trades at 95-98¢ held >= 7 days
 
 ## Phase 2: Signal pipeline

@@ -183,3 +183,13 @@ Milestones 1-3 done.
   wunderground path; Gamma `/events` offset paging stops at ~2000, use
   `/events/keyset`. Always check price staleness (`--max-price-age-minutes`)
   and period halves (`--halves`).
+- Weather experts 2026-11-12 (`weather-experts`, 9421 events, 37k wallets,
+  split 2026-09-19): rank persistence Spearman +0.20 (1950 wallets). Top 20
+  by P1 edge (+10.1 %) keep +2.9 % in P2 (CI +0.7..+5.0). Copying the top 20
+  in P2 (next real trade of the bucket, 50 bps + fee): +2.8 % (0 min), +2.4 %
+  (1 min), +4.4 % (5 min), +3.6 % (15 min), -1.7 % (60 min); all CIs include
+  0 (about -3..+10). Best fifth +0.4 %, worst fifth -2.5 % (significant).
+  Wallet 0x2e3e... (user example, weather bot since 2026-10-01): edge +3.8 %
+  over 14.8k trades, but copying after >= 1 min -1.1..-1.3 % (its edge is
+  gone within a minute). Most promising lead so far: forward paper test of
+  copying a rolling top-20 weather list with real order-book fills.
