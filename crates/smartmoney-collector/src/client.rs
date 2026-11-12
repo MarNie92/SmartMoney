@@ -135,6 +135,15 @@ impl PolymarketClient {
         url: &str,
         query: &[(&str, String)],
     ) -> Result<serde_json::Value, ApiError> {
+        let bytes = self.fetch_bytes(url, query).await?;
+        serde_json::from_slice(&bytes).map_err(|source| ApiError::Parse {
+            url: url.to_owned(),
+            source,
+        })
+    }
+
+    /// GET raw bytes with pacing and retries.
+    async fn fetch_bytes(&self, url: &str, query: &[(&str, String)]) -> Result<Vec<u8>, ApiError> {
         let mut attempt = 0;
         loop {
             self.limiter.acquire().await;
@@ -145,10 +154,7 @@ impl PolymarketClient {
                         url: url.to_owned(),
                         source,
                     })?;
-                    return serde_json::from_slice(&bytes).map_err(|source| ApiError::Parse {
-                        url: url.to_owned(),
-                        source,
-                    });
+                    return Ok(bytes.to_vec());
                 }
                 Ok(resp) => {
                     let status = resp.status();
@@ -576,5 +582,30 @@ impl PolymarketClient {
             .filter(|c| !c.is_empty())
             .map(str::to_owned);
         Ok((events, next))
+    }
+    /// GET a text response (e.g. CSV) through pacing, retries and the
+    /// optional cache. Returns the text and whether it came from the cache,
+    /// so callers can add extra politeness delays only for real requests.
+    pub async fn get_text(
+        &self,
+        url: &str,
+        query: &[(&str, String)],
+    ) -> Result<(String, bool), ApiError> {
+        let path = self
+            .cache_dir
+            .as_ref()
+            .map(|dir| dir.join(format!("{}.txt", cache_key(url, query))));
+        if let Some(path) = &path {
+            if let Ok(text) = tokio::fs::read_to_string(path).await {
+                return Ok((text, true));
+            }
+        }
+        let text = String::from_utf8_lossy(&self.fetch_bytes(url, query).await?).into_owned();
+        if let Some(path) = &path {
+            if let Err(e) = tokio::fs::write(path, &text).await {
+                tracing::warn!(error = %e, path = %path.display(), "could not write cache file");
+            }
+        }
+        Ok((text, false))
     }
 }

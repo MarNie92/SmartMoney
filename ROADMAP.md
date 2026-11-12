@@ -83,6 +83,27 @@ a merge to `main`, a push and a short check-in with the user.
   crypto favourites >= 90¢; large favourite
   trades at 95-98¢ held >= 7 days
 
+## Phase 1d: Weather model v2 (pre-registered criterion, 2026-11-12)
+
+Model: 7 global models (Open-Meteo previous-runs: ECMWF IFS, GFS, ICON,
+GEM, JMA, UKMO, Meteo-France), each bias-corrected per station, kind and
+lead against the station's routine METAR observations (IEM archive) of the
+last 60 resolved days, combined by inverse error variance; spread = RMSE of
+the combination x inflation. No observation of the target day or the day
+before is used.
+
+Success only if ALL hold (decided before the first run):
+1. Brier score better than the market price, 95 % interval of the
+   advantage entirely above 0.
+2. Only market prices at most 60 minutes old at the decision time.
+3. Better than the market (interval above 0) in both halves of the period.
+4. Trading threshold chosen on the first half only; taker return after
+   fees and slippage positive on the second half.
+
+If any check fails: stop the strategy search (no paper trading).
+
+- [ ] Implement and run
+
 ## Phase 2: Signal pipeline
 
 - [ ] `Signal` type and `signals` table: kind (insider / mirror), trade,
