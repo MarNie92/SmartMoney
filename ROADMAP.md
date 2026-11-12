@@ -76,6 +76,9 @@ a merge to `main`, a push and a short check-in with the user.
       (+2.9 %); copying them within 1-15 min shows +2.4..+4.4 % after fees,
       not yet significant. Single star wallets are not copyable (edge gone
       within a minute).
+- [x] Robustness of copying top weather wallets: failed (only one of three
+      splits positive, latest split negative, no plateau across group size
+      and slippage). Skill persists, but followers cannot capture it.
 - Leads for forward paper tests: copy rolling top-20 weather wallets (strongest);
   crypto favourites >= 90¢; large favourite
   trades at 95-98¢ held >= 7 days

@@ -188,6 +188,10 @@ enum Command {
         /// Copy only trades of at least this size.
         #[arg(long, default_value_t = 10.0)]
         copy_min_usd: f64,
+        /// Robustness grid: 3 split dates x top 10/20/40/80 x slippage
+        /// 0.5 / 1 / 2 %, copy after 1, 5 and 15 minutes.
+        #[arg(long)]
+        robust: bool,
     },
 }
 
@@ -813,6 +817,7 @@ async fn main() -> anyhow::Result<()> {
             p1_min_events,
             p2_min_trades,
             copy_min_usd,
+            robust,
         } => {
             let data = weather_load::load(&client, days, 45, now).await?;
             let mut dates: Vec<_> = data.events.iter().map(|e| e.date).collect();
@@ -856,6 +861,38 @@ async fn main() -> anyhow::Result<()> {
                     None => println!("Wallet {w}: keine Trades in den geladenen Wetter-Märkten."),
                 }
             }
+            if robust {
+                // Split dates at 35 %, 50 % and 65 % of the event dates.
+                let splits: Vec<_> = [0.35, 0.50, 0.65]
+                    .iter()
+                    .filter_map(|q| dates.get((dates.len() as f64 * q) as usize).copied())
+                    .collect();
+                let base = weather_experts::ExpertConfig {
+                    delays_minutes: vec![1, 5, 15],
+                    ..ecfg.clone()
+                };
+                let rows = weather_experts::robustness(
+                    &data.events,
+                    &data.trades,
+                    &base,
+                    &splits,
+                    &[10, 20, 40, 80],
+                    &[50.0, 100.0, 200.0],
+                );
+                println!(
+                    "\nRobustheit: Top-N kopieren über {} Stichtage x Top 10/20/40/80 x Slippage 0,5/1/2 % (Gebühr immer enthalten).",
+                    splits.len()
+                );
+                print!("{}", report::robustness_table(&rows));
+                return finish(
+                    &common,
+                    &cfg,
+                    now,
+                    "weather_experts_robust",
+                    serde_json::json!({ "rows": rows }),
+                )
+                .await;
+            }
             let r = weather_experts::evaluate(&data.events, &data.trades, &ecfg);
             println!(
                 "\n{} Wallets bewertet, Rangkorrelation Edge P1 zu P2: {}",
@@ -870,6 +907,17 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    finish(&common, &cfg, now, kind, output).await
+}
+
+/// Write the JSON file (if requested) and store the run in the database.
+async fn finish(
+    common: &Common,
+    cfg: &Config,
+    now: i64,
+    kind: &str,
+    output: serde_json::Value,
+) -> anyhow::Result<()> {
     let output = serde_json::json!({
         "kind": kind,
         "created_at": now,

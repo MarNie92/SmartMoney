@@ -206,12 +206,15 @@ pub struct ExpertReport {
     pub groups: Vec<ExpertGroup>,
 }
 
-pub fn evaluate(
-    events: &[WeatherEvent],
+/// Wallets eligible under the config, sorted by period-1 edge (best first), as
+/// (wallet, P1 edge, P2 edge), plus the number of P2 trades per wallet.
+type Ranked = (Vec<(u32, f64, f64)>, HashMap<u32, usize>);
+
+fn eligible_wallets(
     trades: &HashMap<String, Vec<BucketTrade>>,
+    buckets: &HashMap<&str, BucketInfo>,
     cfg: &ExpertConfig,
-) -> ExpertReport {
-    let buckets = bucket_index(events);
+) -> Ranked {
     let mut p1: HashMap<u32, Acc> = HashMap::new();
     let mut p2: HashMap<u32, Acc> = HashMap::new();
     for (cid, list) in trades {
@@ -238,6 +241,84 @@ pub fn evaluate(
         })
         .collect();
     eligible.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let p2_trades = p2.iter().map(|(w, a)| (*w, a.trades)).collect();
+    (eligible, p2_trades)
+}
+
+/// One robustness configuration: top-N copy result for a split and a
+/// slippage assumption.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RobustRow {
+    pub split_date: NaiveDate,
+    pub top_n: usize,
+    pub slippage_bps: f64,
+    pub wallets: usize,
+    pub p2_edge: f64,
+    pub p2_edge_lo: f64,
+    pub p2_edge_hi: f64,
+    pub copy: Vec<CopyResult>,
+}
+
+/// Copy test of the top-N wallets across splits, group sizes and slippage.
+pub fn robustness(
+    events: &[WeatherEvent],
+    trades: &HashMap<String, Vec<BucketTrade>>,
+    base: &ExpertConfig,
+    splits: &[NaiveDate],
+    top_ns: &[usize],
+    slippages_bps: &[f64],
+) -> Vec<RobustRow> {
+    let buckets = bucket_index(events);
+    let mut rows = Vec::new();
+    for split in splits {
+        let cfg = ExpertConfig {
+            split_date: *split,
+            ..base.clone()
+        };
+        let (eligible, _) = eligible_wallets(trades, &buckets, &cfg);
+        for top_n in top_ns {
+            let members = &eligible[..(*top_n).min(eligible.len())];
+            if members.is_empty() {
+                continue;
+            }
+            let n = members.len() as f64;
+            let mean = members.iter().map(|m| m.2).sum::<f64>() / n;
+            let var = if members.len() > 1 {
+                members.iter().map(|m| (m.2 - mean).powi(2)).sum::<f64>() / (n - 1.0)
+            } else {
+                0.0
+            };
+            let se = (var / n).sqrt();
+            let wallets: HashSet<u32> = members.iter().map(|m| m.0).collect();
+            for slip in slippages_bps {
+                let c = ExpertConfig {
+                    slippage_bps: *slip,
+                    ..cfg.clone()
+                };
+                let split_date = *split;
+                rows.push(RobustRow {
+                    split_date,
+                    top_n: members.len(),
+                    slippage_bps: *slip,
+                    wallets: members.len(),
+                    p2_edge: mean,
+                    p2_edge_lo: mean - 1.96 * se,
+                    p2_edge_hi: mean + 1.96 * se,
+                    copy: copy_trades(trades, &buckets, &wallets, |d| d >= split_date, &c),
+                });
+            }
+        }
+    }
+    rows
+}
+
+pub fn evaluate(
+    events: &[WeatherEvent],
+    trades: &HashMap<String, Vec<BucketTrade>>,
+    cfg: &ExpertConfig,
+) -> ExpertReport {
+    let buckets = bucket_index(events);
+    let (eligible, p2_trades) = eligible_wallets(trades, &buckets, cfg);
     let spearman = crate::smart::spearman(
         &eligible.iter().map(|e| e.1).collect::<Vec<_>>(),
         &eligible.iter().map(|e| e.2).collect::<Vec<_>>(),
@@ -261,7 +342,7 @@ pub fn evaluate(
             p2_edge: mean,
             p2_edge_lo: mean - 1.96 * se,
             p2_edge_hi: mean + 1.96 * se,
-            p2_trades: members.iter().map(|m| p2[&m.0].trades).sum(),
+            p2_trades: members.iter().map(|m| p2_trades[&m.0]).sum(),
             copy: copy_trades(trades, &buckets, &wallets, |d| d >= split, cfg),
         }
     };
@@ -442,5 +523,46 @@ mod tests {
         assert!((p.edge - 0.60).abs() < 1e-9);
         assert_eq!(p.copy[0].copies, 20);
         assert!(profile_wallet(&events, &trades, &wallets, "0xzz", &cfg).is_none());
+    }
+    #[test]
+    fn robustness_grid_varies_group_size_and_slippage() {
+        let d0 = NaiveDate::from_ymd_opt(2026, 9, 1).unwrap();
+        let mut events = Vec::new();
+        let mut trades: HashMap<String, Vec<BucketTrade>> = HashMap::new();
+        for k in 0..20 {
+            let d = d0 + chrono::Duration::days(k);
+            let id = format!("e{k}");
+            events.push(event(&id, d, 1));
+            let ts = 1_000_000 + k * 86_400;
+            trades.insert(
+                format!("{id}-1"),
+                vec![t(ts, 0.40, 0, 1), t(ts + 600, 0.50, 2, 1)],
+            );
+            trades.insert(
+                format!("{id}-0"),
+                vec![t(ts, 0.40, 1, 1), t(ts + 600, 0.30, 2, 1)],
+            );
+        }
+        let base = ExpertConfig {
+            split_date: d0,
+            p1_min_trades: 5,
+            p1_min_events: 5,
+            p2_min_trades: 5,
+            groups: 1,
+            top_n: 1,
+            copy_min_usd: 0.0,
+            delays_minutes: vec![1],
+            slippage_bps: 0.0,
+            fee_rate: 0.0,
+        };
+        let split = d0 + chrono::Duration::days(10);
+        let rows = robustness(&events, &trades, &base, &[split], &[1, 2], &[0.0, 100.0]);
+        assert_eq!(rows.len(), 4);
+        let top1_noslip = &rows[0];
+        assert_eq!((top1_noslip.top_n, top1_noslip.slippage_bps), (1, 0.0));
+        assert!((top1_noslip.copy[0].roi.unwrap() - 1.0).abs() < 1e-9);
+        let top1_slip = &rows[1];
+        assert!((top1_slip.copy[0].roi.unwrap() - (1.0 / 0.505 - 1.0)).abs() < 1e-9);
+        assert_eq!(rows[2].top_n, 2);
     }
 }

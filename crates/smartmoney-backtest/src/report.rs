@@ -633,6 +633,63 @@ pub fn wallet_profile_table(p: &crate::weather_experts::WalletProfile) -> String
     s
 }
 
+/// Robustness grid of the top-N copy test.
+pub fn robustness_table(rows: &[crate::weather_experts::RobustRow]) -> String {
+    let mut s = String::new();
+    let delays: Vec<u64> = rows
+        .first()
+        .map(|r| r.copy.iter().map(|c| c.delay_minutes).collect())
+        .unwrap_or_default();
+    let mut header = format!(
+        "{:<11} {:>5} {:>9} {:>9} {:>20}",
+        "Stichtag", "Top", "Slippage", "Edge P2", "95%-Bereich P2"
+    );
+    for d in &delays {
+        let _ = write!(header, " {:>27}", format!("Kopie +{d} min"));
+    }
+    let _ = writeln!(s, "{header}");
+    let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
+    for r in rows {
+        let mut line = format!(
+            "{:<11} {:>5} {:>9} {:>9} {:>20}",
+            r.split_date.to_string(),
+            r.top_n,
+            format!("{:.1}%", r.slippage_bps / 100.0),
+            signed_pct(Some(r.p2_edge)),
+            format!(
+                "{} bis {}",
+                signed_pct(Some(r.p2_edge_lo)),
+                signed_pct(Some(r.p2_edge_hi))
+            ),
+        );
+        for c in &r.copy {
+            let _ = write!(line, " {:>27}", copy_cell(c));
+        }
+        let _ = writeln!(s, "{line}");
+    }
+    // Plateau summary per delay.
+    let _ = writeln!(s);
+    for (i, d) in delays.iter().enumerate() {
+        let rois: Vec<f64> = rows.iter().filter_map(|r| r.copy[i].roi).collect();
+        let positive = rois.iter().filter(|r| **r > 0.0).count();
+        let significant = rows
+            .iter()
+            .filter(|r| r.copy[i].roi_lo.is_some_and(|lo| lo > 0.0))
+            .count();
+        let mut sorted = rois.clone();
+        sorted.sort_by(f64::total_cmp);
+        let median = sorted.get(sorted.len() / 2).copied();
+        let _ = writeln!(
+            s,
+            "Kopie +{d} min: {positive} von {} Varianten im Plus, {significant} mit 95%-Bereich über 0, Median {}, schlechteste {}",
+            rois.len(),
+            signed_pct(median),
+            signed_pct(sorted.first().copied()),
+        );
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
