@@ -759,6 +759,37 @@ pub fn criterion_table(r: &crate::weather_v2::CriterionReport) -> String {
     s
 }
 
+/// One fingerprint distribution: top group vs. everyone else.
+pub fn fingerprint_table(title: &str, rows: &[crate::weather_fingerprint::BinRow]) -> String {
+    let mut s = String::new();
+    let _ = writeln!(s, "\n{title}");
+    let header = format!(
+        "{:<16} {:>9} {:>9} {:>7} {:>10} {:>10} {:>8}",
+        "Bereich", "Anteil Top", "Anteil Rest", "Faktor", "Edge Top", "Edge Rest", "n Top"
+    );
+    let _ = writeln!(s, "{header}");
+    let _ = writeln!(s, "{}", "-".repeat(header.chars().count()));
+    for r in rows {
+        let lift = r.lift.map_or("–".into(), |l| format!("{l:.2}"));
+        let marker = match r.lift {
+            Some(l) if l >= 1.5 && r.trades_top >= 100 => " <",
+            _ => "",
+        };
+        let _ = writeln!(
+            s,
+            "{:<16} {:>9} {:>9} {:>7} {:>10} {:>10} {:>8}{marker}",
+            r.label,
+            format!("{:.1}%", r.share_top * 100.0),
+            format!("{:.1}%", r.share_rest * 100.0),
+            lift,
+            signed_pct(r.edge_top),
+            signed_pct(r.edge_rest),
+            r.trades_top,
+        );
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

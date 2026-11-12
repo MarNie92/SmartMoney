@@ -16,6 +16,7 @@ pub mod smart;
 pub mod statusquo;
 pub mod weather;
 pub mod weather_experts;
+pub mod weather_fingerprint;
 pub mod weather_load;
 pub mod weather_v2;
 
