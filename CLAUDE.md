@@ -193,3 +193,10 @@ Milestones 1-3 done.
   over 14.8k trades, but copying after >= 1 min -1.1..-1.3 % (its edge is
   gone within a minute). Most promising lead so far: forward paper test of
   copying a rolling top-20 weather list with real order-book fills.
+- Robustness grid 2026-11-12 (`weather-experts --robust`: splits 2026-09-05 /
+  09-20 / 10-05 x top 10/20/40/80 x slippage 0.5/1/2 %): skill persistence is
+  robust (top-group P2 edge +1.4..+4.5 %, almost all CIs > 0), copying is
+  not: +1 min 25/36 variants positive (median +1.8 %), +5 min median +0.1 %,
+  +15 min median -0.6 %; split 09-20 strongly positive, latest split 10-05
+  negative (-1..-3.7 %, some significant). Pre-set criterion (plateau across
+  variants incl. 2x slippage) failed: no forward paper test of copying.
