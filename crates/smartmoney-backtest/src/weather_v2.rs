@@ -17,7 +17,7 @@ use crate::weather::{
     bucket_prob, compare, decision_ts, strategy, BucketTrade, Kind, Observation, ScoreComparison,
     StrategyResult, Unit, WeatherEvent,
 };
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -44,6 +44,11 @@ pub struct StationData {
     pub forecasts: HashMap<(NaiveDate, u8), Vec<Option<Extremes>>>,
     /// Local date -> observed daily extremes (routine METAR reports).
     pub obs: HashMap<NaiveDate, Extremes>,
+    /// Local hour -> mean of the models' lead-1 forecasts (issued 24 h
+    /// before that hour).
+    pub hourly_fc: HashMap<NaiveDateTime, f64>,
+    /// Routine observations at local times, sorted.
+    pub hourly_obs: Vec<(NaiveDateTime, f64)>,
 }
 
 fn extreme(e: Extremes, kind: Kind) -> f64 {
@@ -121,7 +126,56 @@ pub fn parse_multi_forecast(raw: &serde_json::Value) -> StationData {
             }
         }
     }
+    // Hourly lead-1 mean across models (for nowcasting the rest of a day).
+    let times: Vec<Option<NaiveDateTime>> = hourly
+        .get("time")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .map(|t| {
+                    t.as_str()
+                        .and_then(|s| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M").ok())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut sums: Vec<(f64, usize)> = vec![(0.0, 0); times.len()];
+    for model in MODELS {
+        let key = format!("temperature_2m_previous_day1_{model}");
+        let Some(values) = hourly.get(&key).and_then(|v| v.as_array()) else {
+            continue;
+        };
+        for (i, v) in values.iter().enumerate().take(times.len()) {
+            if let Some(x) = v.as_f64() {
+                sums[i].0 += x;
+                sums[i].1 += 1;
+            }
+        }
+    }
+    for (t, (sum, n)) in times.iter().zip(sums) {
+        if let (Some(t), true) = (t, n > 0) {
+            data.hourly_fc.insert(*t, sum / n as f64);
+        }
+    }
     data
+}
+
+/// Parse an IEM ASOS CSV into (local time, value) rows, sorted.
+pub fn parse_iem_hourly(text: &str) -> Vec<(NaiveDateTime, f64)> {
+    let mut rows: Vec<(NaiveDateTime, f64)> = text
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let mut parts = line.split(',');
+            let _station = parts.next()?;
+            let valid = parts.next()?;
+            let value = parts.next()?.trim().parse::<f64>().ok()?;
+            let t = NaiveDateTime::parse_from_str(valid.trim(), "%Y-%m-%d %H:%M").ok()?;
+            Some((t, value))
+        })
+        .collect();
+    rows.sort_by_key(|a| a.0);
+    rows
 }
 
 /// Parse an IEM ASOS CSV (`station,valid,value`, local times) into daily

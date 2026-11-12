@@ -215,3 +215,8 @@ Milestones 1-3 done.
   Interpretation: nowcasting from live station observations (the running
   max/min of routine METARs is a hard bound on the resolution value).
   Next: nowcast backtest with a pre-registered criterion.
+- Nowcast 2026-11-12 (`weather-nowcast`): failed the pre-registered test
+  (12:58 Brier 0.123 vs market 0.086); also failed in an exploratory
+  US-only rerun. IEM vs resolution: 98.6 % bucket agreement for F markets,
+  92.1 % for C markets (rounding at bucket edges). Conclusion: the weather
+  edge of top bots needs real-time, higher-frequency data and speed.

@@ -11,6 +11,7 @@ pub mod calibration;
 pub mod dataset;
 pub mod engine;
 pub mod fullhistory;
+pub mod nowcast;
 pub mod report;
 pub mod smart;
 pub mod statusquo;

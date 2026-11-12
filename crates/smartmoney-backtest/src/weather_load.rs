@@ -444,6 +444,7 @@ pub async fn station_data_v2(
             Ok((text, cached)) => {
                 if text.starts_with("station") {
                     data.obs = parse_iem_csv(&text, 12);
+                    data.hourly_obs = crate::weather_v2::parse_iem_hourly(&text);
                 } else {
                     tracing::warn!(%station, "unexpected observation response");
                 }
