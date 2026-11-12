@@ -206,6 +206,18 @@ enum Command {
         #[arg(long, default_value_t = 1.15)]
         sd_inflation: f64,
     },
+    /// Fingerprint of the best weather traders: when, how early and which
+    /// buckets they trade compared with everyone else.
+    WeatherFingerprint {
+        #[arg(long, default_value_t = 120)]
+        days: i64,
+        /// Size of the top group (by USD-weighted edge).
+        #[arg(long, default_value_t = 40)]
+        top: usize,
+        /// Minimum trades for a wallet to be ranked.
+        #[arg(long, default_value_t = 300)]
+        min_trades: usize,
+    },
 }
 
 fn print_load_stats(s: &dataset::LoadStats) {
@@ -971,6 +983,100 @@ async fn main() -> anyhow::Result<()> {
             (
                 "weather_v2",
                 serde_json::json!({ "stats": data.stats, "leads": leads }),
+            )
+        }
+        Command::WeatherFingerprint {
+            days,
+            top,
+            min_trades,
+        } => {
+            use smartmoney_backtest::weather_fingerprint as fp;
+            let data = weather_load::load(&client, days, 60, now).await?;
+            let stations = weather_load::station_data_v2(&client, &data.events, 60).await?;
+            let offsets: HashMap<String, i64> = stations
+                .iter()
+                .map(|(k, v)| (k.clone(), v.utc_offset))
+                .collect();
+            let vcfg = weather_v2::V2Config {
+                lead: 1,
+                history_days: 60,
+                min_history: 20,
+                sd_inflation: 1.15,
+                sd_floor_f: 1.0,
+                sd_floor_c: 0.6,
+                min_price_usd: 0.0,
+                max_price_age: None,
+            };
+            let models: HashMap<usize, (f64, f64)> = data
+                .events
+                .iter()
+                .enumerate()
+                .filter_map(|(i, e)| {
+                    let st = stations.get(&e.station)?;
+                    Some((i, weather_v2::predict(st, e.kind, e.unit, e.date, &vcfg)?))
+                })
+                .collect();
+            let ctx = fp::contexts(&data.events, &data.trades, &offsets, &models);
+            let ranked = fp::top_wallets(&ctx, min_trades, top);
+            let set: HashSet<u32> = ranked.iter().map(|r| r.0).collect();
+            let top_trades = ctx.iter().filter(|c| set.contains(&c.wallet)).count();
+            println!("SmartMoney Fingerabdruck der besten Wetter-Trader");
+            println!(
+                "{} Trades in {} Events. Top {} Wallets (mind. {min_trades} Trades, nach Edge über den ganzen Zeitraum): {} Trades, \
+                 Edge {} bis {}. Faktor = Anteil Top / Anteil Rest (über 1 = Top handelt dort überproportional; '<' markiert >= 1,5).\n\
+                 Hinweis: rein beschreibend über den ganzen Zeitraum, kein Handelstest.",
+                ctx.len(),
+                data.events.len(),
+                ranked.len(),
+                top_trades,
+                ranked.last().map_or("–".into(), |r| format!("{:+.1}%", r.1 * 100.0)),
+                ranked.first().map_or("–".into(), |r| format!("{:+.1}%", r.1 * 100.0)),
+            );
+            let hours: Vec<String> = (0..24).map(|h| format!("{h:02}:00")).collect();
+            let slots: Vec<String> = (0..12)
+                .map(|s| format!(":{:02}–:{:02}", s * 5, s * 5 + 4))
+                .collect();
+            let labels =
+                |bins: &[(&str, f64, f64)]| bins.iter().map(|b| b.0.to_owned()).collect::<Vec<_>>();
+            let day_labels: Vec<String> = fp::DAY_BINS.iter().map(|b| b.0.to_owned()).collect();
+            let tables = [
+                (
+                    "Uhrzeit UTC (feste Modell-Veröffentlichungen wären hier sichtbar)",
+                    fp::distribution(&ctx, &set, &hours, fp::utc_hour),
+                ),
+                (
+                    "Ortszeit der Station",
+                    fp::distribution(&ctx, &set, &hours, fp::local_hour),
+                ),
+                (
+                    "Minute in der Stunde (US-METAR-Messungen erscheinen um :51–:53)",
+                    fp::distribution(&ctx, &set, &slots, fp::minute_slot),
+                ),
+                (
+                    "Zeitpunkt relativ zum Markttag (Ortszeit)",
+                    fp::distribution(&ctx, &set, &day_labels, fp::day_bin),
+                ),
+                (
+                    "Bezahlter Kurs (gekaufte Seite)",
+                    fp::distribution(&ctx, &set, &labels(&fp::PRICE_BINS), fp::price_bin),
+                ),
+                (
+                    "Gekaufte Spanne relativ zur Modellvorhersage (nur JA-Käufe)",
+                    fp::distribution(&ctx, &set, &labels(&fp::Z_BINS), fp::z_bin_long),
+                ),
+            ];
+            let mut json_tables = Vec::new();
+            for (title, rows) in &tables {
+                print!("{}", report::fingerprint_table(title, rows));
+                json_tables.push(serde_json::json!({ "title": title, "rows": rows }));
+            }
+            let wallets: Vec<serde_json::Value> = ranked
+                .iter()
+                .map(|(w, e, n)| serde_json::json!({ "wallet": data.wallets[*w as usize], "edge": e, "trades": n }))
+                .collect();
+            (
+                "weather_fingerprint",
+                serde_json::json!({ "top_wallets": wallets, "tables": json_tables }),
             )
         }
     };

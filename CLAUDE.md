@@ -206,3 +206,12 @@ Milestones 1-3 done.
   better by ~0.01 overall and in both halves; out-of-sample half -7.5 %.
   The market is far sharper than global-model blends; top weather bots
   must use better or faster information. Strategy search stopped.
+- Weather fingerprint 2026-11-12 (`weather-fingerprint`, top 40 wallets by
+  edge, 31k trades vs 9.7M others): the best traders trade ON the event day
+  (70 % between 06 and 18 local vs 45 % for others; peak 10-15 local), with
+  a minute-of-hour lift of 1.35-1.43 at :50-:59, right after US routine
+  METAR reports (:51-:53). No clear peaks at fixed UTC model-release hours.
+  They avoid 85-100c (21 % vs 43 %) and earn most at 35-85c (+12-13 %).
+  Interpretation: nowcasting from live station observations (the running
+  max/min of routine METARs is a hard bound on the resolution value).
+  Next: nowcast backtest with a pre-registered criterion.

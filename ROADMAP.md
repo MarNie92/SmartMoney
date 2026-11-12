@@ -111,6 +111,17 @@ If any check fails: stop the strategy search (no paper trading).
       50-70 % on 2180 buckets and is calibrated; the model rarely exceeds
       50 %). Per the pre-registered rule: strategy search stopped.
 
+## Phase 1e: Learn from expert behaviour (2026-11-12)
+
+- [x] Fingerprint of the top 40 weather wallets: they trade on the event
+      day itself, right after the hourly METAR observations (:51-:53),
+      mostly 10-15 local time, mid-priced buckets. Their information source
+      is public: live station observations (nowcasting).
+- [ ] Nowcast backtest: during the event day, combine the observed running
+      max/min (routine METARs up to the decision time) with the remaining
+      hours of the forecast; compare with fresh market prices; same
+      pre-registered criterion as Phase 1d.
+
 ## Phase 2: Signal pipeline
 
 - [ ] `Signal` type and `signals` table: kind (insider / mirror), trade,
