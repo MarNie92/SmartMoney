@@ -16,7 +16,7 @@ use smartmoney_backtest::statusquo;
 use smartmoney_backtest::{
     insider_variants, report, run_given_variants, run_variants, VariantResult,
 };
-use smartmoney_backtest::{weather, weather_experts, weather_load};
+use smartmoney_backtest::{weather, weather_experts, weather_load, weather_v2};
 use smartmoney_collector::PolymarketClient;
 use smartmoney_core::{Config, MarketCategory};
 use smartmoney_store::Store;
@@ -192,6 +192,19 @@ enum Command {
         /// 0.5 / 1 / 2 %, copy after 1, 5 and 15 minutes.
         #[arg(long)]
         robust: bool,
+    },
+    /// Weather model v2 (multi-model, station-calibrated) with the
+    /// pre-registered success criterion.
+    WeatherV2 {
+        #[arg(long, default_value_t = 120)]
+        days: i64,
+        #[arg(long, default_value_t = 60)]
+        history_days: i64,
+        #[arg(long, default_value_t = 20)]
+        min_history: usize,
+        /// Spread inflation (the error fit is in-sample).
+        #[arg(long, default_value_t = 1.15)]
+        sd_inflation: f64,
     },
 }
 
@@ -903,6 +916,61 @@ async fn main() -> anyhow::Result<()> {
             (
                 "weather_experts",
                 serde_json::json!({ "split_date": split_date, "report": r }),
+            )
+        }
+        Command::WeatherV2 {
+            days,
+            history_days,
+            min_history,
+            sd_inflation,
+        } => {
+            let data = weather_load::load(&client, days, history_days, now).await?;
+            let stations =
+                weather_load::station_data_v2(&client, &data.events, history_days).await?;
+            let with_obs = stations.values().filter(|s| !s.obs.is_empty()).count();
+            println!("SmartMoney Wetter-Modell v2: 7 Wettermodelle, kalibriert auf Stationsmessungen (METAR)");
+            println!(
+                "{} Events, {} Stationen ({} mit Messwerten), {} Trades. Lernfenster {history_days} Tage (mind. {min_history}), \
+                 Streuung x {sd_inflation}. Marktpreise höchstens 60 min alt.",
+                data.events.len(),
+                stations.len(),
+                with_obs,
+                data.stats.trades
+            );
+            let mut leads = Vec::new();
+            for lead in [2u8, 1] {
+                let vcfg = weather_v2::V2Config {
+                    lead,
+                    history_days,
+                    min_history,
+                    sd_inflation,
+                    sd_floor_f: 1.0,
+                    sd_floor_c: 0.6,
+                    min_price_usd: 2.0,
+                    max_price_age: Some(60 * 60),
+                };
+                let obs = weather_v2::observations(&data.events, &data.trades, &stations, &vcfg);
+                let crit = weather_v2::criterion(
+                    &obs,
+                    true,
+                    &[0.03, 0.05, 0.10, 0.15, 0.20],
+                    200,
+                    0.05,
+                    cfg.backtest.slippage_bps,
+                );
+                println!(
+                    "\n== Vorlauf {lead} Tag(e): {} Spannen mit frischem Marktpreis ==",
+                    obs.len()
+                );
+                println!("Kalibrierung (Gewinnquote je Wahrscheinlichkeitsbereich):");
+                print!("{}", report::weather_calibration_table(&obs));
+                println!();
+                print!("{}", report::criterion_table(&crit));
+                leads.push(serde_json::json!({ "lead": lead, "observations": obs.len(), "criterion": crit }));
+            }
+            (
+                "weather_v2",
+                serde_json::json!({ "stats": data.stats, "leads": leads }),
             )
         }
     };

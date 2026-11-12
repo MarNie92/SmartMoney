@@ -364,6 +364,102 @@ pub async fn load(
     })
 }
 
+const IEM_URL: &str = "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py";
+
+/// Multi-model forecasts and station observations for model v2.
+pub async fn station_data_v2(
+    client: &PolymarketClient,
+    events: &[WeatherEvent],
+    history_days: i64,
+) -> Result<HashMap<String, crate::weather_v2::StationData>, ApiError> {
+    use crate::weather_v2::{parse_iem_csv, parse_multi_forecast, MODELS};
+    let mut units: HashMap<String, Unit> = HashMap::new();
+    for e in events {
+        units.entry(e.station.clone()).or_insert(e.unit);
+    }
+    let mut stations: Vec<String> = units.keys().cloned().collect();
+    stations.sort();
+    let coords = station_coords(client, &stations).await?;
+    let (Some(first), Some(last)) = (
+        events.iter().map(|e| e.date).min(),
+        events.iter().map(|e| e.date).max(),
+    ) else {
+        return Ok(HashMap::new());
+    };
+    let start = first - chrono::Duration::days(history_days + 5);
+    let end = last;
+    let mut out = HashMap::new();
+    for station in &stations {
+        let Some((lat, lon)) = coords.get(station) else {
+            tracing::warn!(%station, "no coordinates");
+            continue;
+        };
+        let (om_unit, iem_field) = match units[station] {
+            Unit::F => ("fahrenheit", "tmpf"),
+            Unit::C => ("celsius", "tmpc"),
+        };
+        let raw = match client
+            .get_json(
+                FORECAST_URL,
+                &[
+                    ("latitude", format!("{lat:.4}")),
+                    ("longitude", format!("{lon:.4}")),
+                    (
+                        "hourly",
+                        "temperature_2m_previous_day1,temperature_2m_previous_day2".to_owned(),
+                    ),
+                    ("models", MODELS.join(",")),
+                    ("temperature_unit", om_unit.to_owned()),
+                    ("timezone", "auto".to_owned()),
+                    ("start_date", start.format("%Y-%m-%d").to_string()),
+                    ("end_date", end.format("%Y-%m-%d").to_string()),
+                ],
+            )
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(%station, error = %e, "multi-model forecast skipped");
+                continue;
+            }
+        };
+        let mut data = parse_multi_forecast(&raw);
+        let obs_end = end + chrono::Duration::days(1);
+        let query = [
+            ("station", station.clone()),
+            ("data", iem_field.to_owned()),
+            ("year1", start.format("%Y").to_string()),
+            ("month1", start.format("%m").to_string()),
+            ("day1", start.format("%d").to_string()),
+            ("year2", obs_end.format("%Y").to_string()),
+            ("month2", obs_end.format("%m").to_string()),
+            ("day2", obs_end.format("%d").to_string()),
+            ("tz", data.timezone.clone()),
+            ("format", "onlycomma".to_owned()),
+            ("latlon", "no".to_owned()),
+            ("missing", "M".to_owned()),
+            ("report_type", "3".to_owned()),
+        ];
+        match client.get_text(IEM_URL, &query).await {
+            Ok((text, cached)) => {
+                if text.starts_with("station") {
+                    data.obs = parse_iem_csv(&text, 12);
+                } else {
+                    tracing::warn!(%station, "unexpected observation response");
+                }
+                if !cached {
+                    // Be polite to the free archive.
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                }
+            }
+            Err(e) => tracing::warn!(%station, error = %e, "observations skipped"),
+        }
+        tracing::info!(%station, forecast_days = data.forecasts.len(), obs_days = data.obs.len(), "station data");
+        out.insert(station.clone(), data);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

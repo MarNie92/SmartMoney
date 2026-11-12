@@ -690,6 +690,75 @@ pub fn robustness_table(rows: &[crate::weather_experts::RobustRow]) -> String {
     s
 }
 
+/// Pre-registered criterion of the weather model v2.
+pub fn criterion_table(r: &crate::weather_v2::CriterionReport) -> String {
+    let mut s = String::new();
+    let mark = |ok: bool| if ok { "ERFÜLLT" } else { "nicht erfüllt" };
+    let cmp = |c: &Option<crate::weather::ScoreComparison>| {
+        match c {
+        Some(c) => format!(
+            "Brier Modell {:.4} / Markt {:.4}, Vorteil {:+.4} ({:+.4} bis {:+.4}), {} Spannen in {} Events",
+            c.brier_model, c.brier_market, c.advantage, c.advantage_lo, c.advantage_hi, c.observations, c.events
+        ),
+        None => "keine Daten".into(),
+    }
+    };
+    let _ = writeln!(s, "Gesamt:        {}", cmp(&r.overall));
+    let _ = writeln!(s, "1. Hälfte:     {}", cmp(&r.half1));
+    let _ = writeln!(
+        s,
+        "2. Hälfte:     {}  (ab {})",
+        cmp(&r.half2),
+        r.split_date.map_or("–".into(), |d| d.to_string())
+    );
+    let _ = writeln!(s, "\nStrategie 1. Hälfte (Schwelle wird hier gewählt):");
+    s.push_str(&weather_strategy_table(&r.half1_strategies));
+    match (&r.chosen_threshold, &r.half2_result) {
+        (Some(t), Some(h2)) => {
+            let _ = writeln!(
+                s,
+                "\nGewählte Schwelle {:.0} Pkt. -> 2. Hälfte (unbekannte Daten):",
+                t * 100.0
+            );
+            s.push_str(&weather_strategy_table(std::slice::from_ref(h2)));
+        }
+        _ => {
+            let _ = writeln!(s, "\nKeine Schwelle mit genug Wetten in der 1. Hälfte.");
+        }
+    }
+    let _ = writeln!(s, "\nVorab festgelegtes Kriterium:");
+    let _ = writeln!(
+        s,
+        "  1. Genauer als der Markt (Bereich > 0):        {}",
+        mark(r.more_accurate)
+    );
+    let _ = writeln!(
+        s,
+        "  2. Nur frische Preise (<= 60 min):             {}",
+        mark(r.fresh_prices)
+    );
+    let _ = writeln!(
+        s,
+        "  3. In beiden Hälften genauer (Bereich > 0):    {}",
+        mark(r.both_halves)
+    );
+    let _ = writeln!(
+        s,
+        "  4. Gewinn in der 2. Hälfte nach Kosten:        {}",
+        mark(r.out_of_sample_profit)
+    );
+    let _ = writeln!(
+        s,
+        "  => {}",
+        if r.passed() {
+            "BESTANDEN: Papierhandel als nächster Schritt."
+        } else {
+            "NICHT BESTANDEN: Strategiesuche beenden."
+        }
+    );
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

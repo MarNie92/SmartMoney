@@ -200,3 +200,9 @@ Milestones 1-3 done.
   +15 min median -0.6 %; split 09-20 strongly positive, latest split 10-05
   negative (-1..-3.7 %, some significant). Pre-set criterion (plateau across
   variants incl. 2x slippage) failed: no forward paper test of copying.
+- Weather model v2 2026-11-12 (`weather-v2`: 7 Open-Meteo models,
+  bias/inverse-variance combination calibrated on IEM METAR observations,
+  pre-registered criterion in ROADMAP Phase 1d): failed. Market Brier
+  better by ~0.01 overall and in both halves; out-of-sample half -7.5 %.
+  The market is far sharper than global-model blends; top weather bots
+  must use better or faster information. Strategy search stopped.
