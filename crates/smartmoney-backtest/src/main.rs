@@ -15,6 +15,7 @@ use smartmoney_backtest::nowcast;
 use smartmoney_backtest::reaction;
 use smartmoney_backtest::smart::{self, SmartConfig};
 use smartmoney_backtest::statusquo;
+use smartmoney_backtest::{anchor, anchor_load};
 use smartmoney_backtest::{
     insider_variants, report, run_given_variants, run_variants, VariantResult,
 };
@@ -246,6 +247,19 @@ enum Command {
     WeatherReaction {
         #[arg(long, default_value_t = 120)]
         days: i64,
+    },
+    /// Sharp-line anchor backtest: football moneyline vs de-vigged closing
+    /// odds (pre-registered criterion, ROADMAP Phase 1g).
+    Anchor {
+        /// Minimum trade size for the pre-kickoff price (USD).
+        #[arg(long, default_value_t = 10.0)]
+        min_trade_usd: f64,
+        /// Price window starts this many minutes before kickoff.
+        #[arg(long, default_value_t = 60)]
+        window_minutes: i64,
+        /// Prices younger than this many minutes before kickoff are ignored.
+        #[arg(long, default_value_t = 5)]
+        cutoff_minutes: i64,
     },
 }
 
@@ -1333,6 +1347,97 @@ async fn main() -> anyhow::Result<()> {
             (
                 "weather_reaction",
                 serde_json::json!({ "groups": summaries }),
+            )
+        }
+        Command::Anchor {
+            min_trade_usd,
+            window_minutes,
+            cutoff_minutes,
+        } => {
+            let data = anchor_load::load(
+                &client,
+                min_trade_usd,
+                window_minutes * 60,
+                cutoff_minutes * 60,
+            )
+            .await?;
+            let s = &data.stats;
+            println!(
+                "SmartMoney Anker-Backtest: Polymarket-Fußball (Sieg/Remis/Sieg) gegen die entvigte \
+                 Schlussquote (Pinnacle > Betfair-Börse > Schlussschnitt, football-data.co.uk)."
+            );
+            println!(
+                "Marktpreis: letzter Trade >= ${min_trade_usd} im Fenster {window_minutes}-{cutoff_minutes} min \
+                 vor Anpfiff. Gebühr 0,05 x p x (1-p), +{:.0} bps Slippage.",
+                cfg.backtest.slippage_bps
+            );
+            println!(
+                "Daten: {} Quotenzeilen, {} Events gesichtet, {} Moneyline-Spiele, {} ohne Auflösung.",
+                s.odds_rows, s.events_seen, s.moneyline_events, s.unresolved
+            );
+            println!(
+                "Join: {} verbunden, {} ohne Gegenstück, {} mehrdeutig (verworfen). Quellen: {:?}",
+                s.joined, s.unmatched, s.ambiguous, s.sources
+            );
+            let mm_rate = if s.joined + s.truth_mismatch > 0 {
+                100.0 * s.truth_mismatch as f64 / (s.joined + s.truth_mismatch) as f64
+            } else {
+                0.0
+            };
+            println!(
+                "Wahrheitstest: {} Widersprüche Polymarket vs. CSV-Endstand ({mm_rate:.1} %, ausgeschlossen; > 2 % blockiert den Test).",
+                s.truth_mismatch
+            );
+            println!(
+                "Preise: {} von {} Ausgangs-Märkten mit frischem Preis ({} Abbrüche am Seitenlimit).",
+                s.priced_outcomes, s.outcomes_total, s.paging_capped
+            );
+            if mm_rate > 2.0 {
+                println!("ABBRUCH laut Kriterium: zu viele Wahrheits-Widersprüche; zuerst den Join prüfen.");
+            }
+            let obs = anchor::observations(&data.matches, &data.prices);
+            println!("\nJe Liga (informativ): Brier Anker vs. Markt, Vorteil > 0 = Anker genauer");
+            for (slug, _) in anchor::LEAGUES {
+                let sub: Vec<weather::Observation> =
+                    obs.iter().filter(|o| o.station == slug).cloned().collect();
+                if let Some(c) = weather::compare(&sub) {
+                    println!(
+                        "{:<12} {:>5} Spannen in {:>4} Spielen: {:.4} vs {:.4}, Vorteil {:+.4} ({:+.4}..{:+.4})",
+                        slug,
+                        c.observations,
+                        c.events,
+                        c.brier_model,
+                        c.brier_market,
+                        c.advantage,
+                        c.advantage_lo,
+                        c.advantage_hi
+                    );
+                }
+            }
+            println!("\nKalibrierung (Gewinnquote je Wahrscheinlichkeitsbereich):");
+            print!("{}", report::weather_calibration_table(&obs));
+            let crit = weather_v2::criterion(
+                &obs,
+                true,
+                &[0.02, 0.03, 0.05, 0.08, 0.10],
+                30,
+                0.05,
+                cfg.backtest.slippage_bps,
+            );
+            println!();
+            print!("{}", report::criterion_table(&crit));
+            (
+                "anchor",
+                serde_json::json!({
+                    "stats": s,
+                    "observations": obs.len(),
+                    "criterion": crit,
+                    "params": {
+                        "min_trade_usd": min_trade_usd,
+                        "window_minutes": window_minutes,
+                        "cutoff_minutes": cutoff_minutes,
+                    },
+                }),
             )
         }
     };

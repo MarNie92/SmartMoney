@@ -221,6 +221,12 @@ pub struct GammaMarket {
     pub uma_resolution_status: Option<String>,
     #[serde(default)]
     pub neg_risk: Option<bool>,
+    /// Kick-off / game start (sports markets), e.g. "2026-11-08 18:30:00+00".
+    #[serde(default)]
+    pub game_start_time: Option<String>,
+    /// Sports market type (e.g. "moneyline", "spreads").
+    #[serde(default)]
+    pub sports_market_type: Option<String>,
     /// Short label of the market inside a multi-market event (e.g. "58-59°F").
     #[serde(default)]
     pub group_item_title: Option<String>,

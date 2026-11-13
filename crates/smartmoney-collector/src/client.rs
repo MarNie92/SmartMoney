@@ -412,6 +412,29 @@ impl PolymarketClient {
             .value)
     }
 
+    /// One page of a market's trades with USDC value >= ,
+    /// newest first (cursor pagination).
+    pub async fn market_trades_min_cash_page(
+        &self,
+        condition_id: &str,
+        min_cash: f64,
+        cursor: Option<&str>,
+    ) -> Result<Page<DataTrade>, ApiError> {
+        let mut query = vec![
+            ("condition", condition_id.to_owned()),
+            ("filter_type", "CASH".to_owned()),
+            ("filter_amount", format!("{min_cash}")),
+            ("limit", "1000".to_owned()),
+        ];
+        if let Some(c) = cursor {
+            query.push(("cursor", c.to_owned()));
+        }
+        Ok(self
+            .get(&format!("{}/v2/trades", self.data_url), &query)
+            .await?
+            .value)
+    }
+
     /// Up to 1000 most recent BUY trades of a wallet within `[start, end]`.
     pub async fn user_buys(
         &self,
