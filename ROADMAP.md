@@ -175,6 +175,41 @@ data is not fast or precise enough.
   NBM/HRRR-based forecasts hours ahead (archive on AWS since 2020); low
   expectation given Phase 1d, would need its own pre-registered criterion.
 
+## Phase 1g: Sharp-line anchor backtest, football (pre-registered 2026-11-13)
+
+Hypothesis: Polymarket pre-match football prices are soft; when they
+diverge from the sharpest available bookmaker closing line, the
+bookmaker side wins more often than the Polymarket price implies.
+Motivation: timing profiles of two successful Reddit-sourced wallets
+(esports, multi-sport) show their edge sits in the pre-match window,
+not in-play.
+
+Design, registered before the first run (`backtest anchor`):
+
+- Sample: resolved Polymarket moneyline events (home win / draw / away
+  win as three binary markets) of Bundesliga, EPL, La Liga, Serie A and
+  Ligue 1, seasons 2025/26 and 2026/27 (Polymarket coverage starts
+  around Feb 2026, inside the fee era).
+- Anchor: closing odds from football-data.co.uk, de-vigged
+  proportionally; per match the first available of Pinnacle (`PSC*`),
+  Betfair Exchange (`BFEC*`), closing market average (`AvgC*`).
+- Market price per outcome: last trade >= $10 in the window 60 to 5
+  minutes before `gameStartTime`; no fresh price -> outcome excluded.
+- Join: league + unordered team pair (normalised tokens + alias list) +
+  kickoff date +-1 day; ambiguous joins are dropped and counted.
+  Truth check: Polymarket resolution must equal the CSV full-time
+  result; mismatches are excluded and counted, > 2 % blocks the test.
+- Evaluation: the Phase 1d criterion (`weather_v2::criterion`,
+  match-clustered 95 % CIs). PASS requires all four checks: anchor
+  Brier beats the market with CI > 0 overall AND in both halves (split
+  at the median kickoff date); divergence threshold chosen on half 1
+  from {2, 3, 5, 8, 10} points (min 30 bets); half-2 ROI after fee
+  0.05 x p x (1-p) and 50 bps slippage must be positive.
+- Accepted, documented bias: closing odds are sampled at kickoff, the
+  Polymarket price up to 60 min earlier; late team news moves lines, so
+  a PASS overstates what is tradable and must be confirmed by a forward
+  paper test with real-time quotes before anything else is built.
+
 ## Phase 2: Signal pipeline
 
 - [ ] `Signal` type and `signals` table: kind (insider / mirror), trade,
