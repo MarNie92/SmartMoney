@@ -260,6 +260,9 @@ enum Command {
         /// Prices younger than this many minutes before kickoff are ignored.
         #[arg(long, default_value_t = 5)]
         cutoff_minutes: i64,
+        /// Secondary competitions (Phase 1g-b) instead of the top-5 leagues.
+        #[arg(long)]
+        secondary: bool,
     },
 }
 
@@ -1353,15 +1356,35 @@ async fn main() -> anyhow::Result<()> {
             min_trade_usd,
             window_minutes,
             cutoff_minutes,
+            secondary,
         } => {
+            let leagues: &[(&str, &str)] = if secondary {
+                &anchor::SECONDARY_LEAGUES
+            } else {
+                &anchor::LEAGUES
+            };
             let data = anchor_load::load(
                 &client,
+                leagues,
                 min_trade_usd,
                 window_minutes * 60,
                 cutoff_minutes * 60,
             )
             .await?;
             let s = &data.stats;
+            println!(
+                "Stichprobe {}: {}",
+                if secondary {
+                    "Nebenwettbewerbe (Phase 1g-b)"
+                } else {
+                    "Top-5-Ligen (Phase 1g)"
+                },
+                leagues
+                    .iter()
+                    .map(|(l, _)| *l)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
             println!(
                 "SmartMoney Anker-Backtest: Polymarket-Fußball (Sieg/Remis/Sieg) gegen die entvigte \
                  Schlussquote (Pinnacle > Betfair-Börse > Schlussschnitt, football-data.co.uk)."
@@ -1397,7 +1420,7 @@ async fn main() -> anyhow::Result<()> {
             }
             let obs = anchor::observations(&data.matches, &data.prices);
             println!("\nJe Liga (informativ): Brier Anker vs. Markt, Vorteil > 0 = Anker genauer");
-            for (slug, _) in anchor::LEAGUES {
+            for (slug, _) in leagues.iter().copied() {
                 let sub: Vec<weather::Observation> =
                     obs.iter().filter(|o| o.station == slug).cloned().collect();
                 if let Some(c) = weather::compare(&sub) {
@@ -1434,6 +1457,7 @@ async fn main() -> anyhow::Result<()> {
                     "criterion": crit,
                     "params": {
                         "min_trade_usd": min_trade_usd,
+                        "secondary": secondary,
                         "window_minutes": window_minutes,
                         "cutoff_minutes": cutoff_minutes,
                     },
