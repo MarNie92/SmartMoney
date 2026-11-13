@@ -6,6 +6,8 @@
 //! BUY is scored with only the information available at its timestamp, then
 //! compared with the market's outcome and with following it X minutes later.
 
+pub mod anchor;
+pub mod anchor_load;
 pub mod bots;
 pub mod calibration;
 pub mod dataset;
