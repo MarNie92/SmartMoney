@@ -4,7 +4,7 @@
 
 use crate::anchor::{
     devig, find, norm_name, parse_odds_csv, prepare, team_ref, team_score, truth_ok, yes_price,
-    Join, MatchRow, PreparedOdds, LEAGUES, ODDS_BASE, SEASONS,
+    Join, MatchRow, PreparedOdds, ODDS_BASE, SEASONS,
 };
 use anyhow::Context;
 use chrono::NaiveDate;
@@ -152,10 +152,11 @@ fn candidate(e: &GammaEventWithMarkets, league: &str, stats: &mut LoadStats) -> 
 
 async fn load_odds(
     client: &PolymarketClient,
+    leagues: &[(&str, &str)],
 ) -> anyhow::Result<HashMap<String, Vec<PreparedOdds>>> {
     let today = chrono::Utc::now().date_naive().to_string();
     let mut out: HashMap<String, Vec<PreparedOdds>> = HashMap::new();
-    for (slug, div) in LEAGUES {
+    for (slug, div) in leagues.iter().copied() {
         let mut rows = Vec::new();
         for season in SEASONS {
             let url = format!("{ODDS_BASE}/{season}/{div}.csv");
@@ -269,18 +270,19 @@ async fn fetch_price(
 
 pub async fn load(
     client: &PolymarketClient,
+    leagues: &[(&str, &str)],
     min_trade_usd: f64,
     window_s: i64,
     cutoff_s: i64,
 ) -> anyhow::Result<AnchorData> {
-    let odds = load_odds(client).await?;
+    let odds = load_odds(client, leagues).await?;
     let mut stats = LoadStats {
         odds_rows: odds.values().map(Vec::len).sum(),
         ..LoadStats::default()
     };
 
     let mut candidates = Vec::new();
-    for (slug, _) in LEAGUES {
+    for (slug, _) in leagues.iter().copied() {
         candidates.extend(load_events(client, slug, &mut stats).await?);
     }
 

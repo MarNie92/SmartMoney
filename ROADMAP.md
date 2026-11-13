@@ -224,6 +224,17 @@ sharp line in the final hour before kickoff; a borrowed-sharp-line
 strategy has no room there. The pre-match edges of the profiled wallets
 must come from earlier windows, smaller markets or selection/luck.
 
+**Phase 1g-b, secondary competitions (pre-registered 2026-11-13 before
+the first run):** identical design and criterion, new sample: the seven
+Polymarket competitions with moneyline coverage that football-data.co.uk
+also covers with closing odds — EFL Championship (E1), 2. Bundesliga
+(D2), La Liga 2 (SP2), Serie B (I2), Ligue 2 (F2), Primeira Liga (P1),
+Scottish Premiership (SC0), seasons 2025/26 + 2026/27 (`anchor
+--secondary`). Not testable for lack of a free closing-odds anchor:
+cups (Copa del Rey $25M, DFB-Pokal $14M, FA Cup), MLS, Brasileirão and
+K League (football-data's extra files carry non-closing odds only), and
+Champions/Europa League (no match moneylines under those tags).
+
 ## Phase 2: Signal pipeline
 
 - [ ] `Signal` type and `signals` table: kind (insider / mirror), trade,

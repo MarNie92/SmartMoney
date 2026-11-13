@@ -16,6 +16,18 @@ pub const LEAGUES: [(&str, &str); 5] = [
     ("ligue-1", "F1"),
 ];
 
+/// Secondary competitions with Polymarket moneylines and football-data
+/// closing odds (ROADMAP Phase 1g-b).
+pub const SECONDARY_LEAGUES: [(&str, &str); 7] = [
+    ("efl-championship", "E1"),
+    ("bundesliga-2", "D2"),
+    ("la-liga-2", "SP2"),
+    ("serie-b", "I2"),
+    ("ligue-2", "F2"),
+    ("primeira-liga", "P1"),
+    ("scottish-premiership", "SC0"),
+];
+
 /// football-data season directory codes.
 pub const SEASONS: [&str; 2] = ["2526", "2627"];
 
@@ -124,7 +136,7 @@ pub fn devig(odds: [f64; 3]) -> Option<[f64; 3]> {
 }
 
 /// Full-name aliases applied after normalisation (both sides).
-const FULL_ALIAS: [(&str, &str); 9] = [
+const FULL_ALIAS: [(&str, &str); 16] = [
     ("ac milan", "milan"),
     ("athletic club", "ath bilbao"),
     ("athletic bilbao", "ath bilbao"),
@@ -134,10 +146,20 @@ const FULL_ALIAS: [(&str, &str); 9] = [
     ("inter milan", "inter"),
     ("fc internazionale milano", "inter"),
     ("internazionale", "inter"),
+    ("queens park rangers", "qpr"),
+    ("sporting cp", "sp lisbon"),
+    ("sporting lisbon", "sp lisbon"),
+    ("sporting clube de portugal", "sp lisbon"),
+    ("sporting braga", "sp braga"),
+    ("sc braga", "sp braga"),
+    ("heart of midlothian", "hearts"),
 ];
 
 /// Token aliases (short forms, diacritic variants).
-const TOKEN_ALIAS: [(&str, &str); 14] = [
+const TOKEN_ALIAS: [(&str, &str); 17] = [
+    ("weds", "wednesday"),
+    ("utd", "united"),
+    ("brom", "bromwich"),
     ("man", "manchester"),
     ("nottm", "nottingham"),
     ("wolves", "wolverhampton"),
@@ -199,7 +221,8 @@ const STOP: [&str; 40] = [
 ];
 
 /// Shared tokens that are weak evidence (shared city or honorific).
-const WEAK: [&str; 18] = [
+const WEAK: [&str; 19] = [
+    "sheffield",
     "real",
     "united",
     "city",
@@ -498,6 +521,33 @@ mod tests {
             ("Real Betis", "Real Madrid", 4, false),
             ("Paris Saint-Germain", "AS Saint-Étienne", 5, true),
             ("Inter Milan", "AC Milan", 6, true),
+        ];
+        for (a, b, want_idx, want_home) in cases {
+            match j(a, b, &rows) {
+                Join::Unique(p, a_home) => {
+                    assert_eq!(p.row.home, rows[want_idx].row.home, "{a} vs {b}");
+                    assert_eq!(a_home, want_home, "{a} vs {b}");
+                }
+                other => panic!("{a} vs {b}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn matches_secondary_competition_names() {
+        let rows = prepare(vec![
+            odds_row("Sheffield Weds", "Hull", 8),
+            odds_row("Sheffield United", "QPR", 8),
+            odds_row("Sp Lisbon", "Sp Braga", 8),
+            odds_row("Hearts", "Dundee Utd", 8),
+            odds_row("Dundee", "Celtic", 8),
+        ]);
+        let cases = [
+            ("Sheffield Wednesday", "Hull City", 0, true),
+            ("Queens Park Rangers", "Sheffield United", 1, false),
+            ("Sporting CP", "SC Braga", 2, true),
+            ("Heart of Midlothian", "Dundee United", 3, true),
+            ("Celtic FC", "Dundee FC", 4, false),
         ];
         for (a, b, want_idx, want_home) in cases {
             match j(a, b, &rows) {
