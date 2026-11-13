@@ -220,3 +220,10 @@ Milestones 1-3 done.
   US-only rerun. IEM vs resolution: 98.6 % bucket agreement for F markets,
   92.1 % for C markets (rounding at bucket edges). Conclusion: the weather
   edge of top bots needs real-time, higher-frequency data and speed.
+- Real-time feasibility 2026-11-12 (ROADMAP Phase 1f, `weather-reaction`):
+  US METARs (tenths °C) are public 2.7-3.3 min after observation; NWS
+  5-minute values are whole °C and ~22 min late; HRRR (+51 min) and NBM
+  station bulletins with TXN/XND (+38-55 min) are free on AWS (US only).
+  Buckets ruled out by a METAR are harvested within 0-3 min, before the
+  METAR is public; later slack ~$65/day for all US cities. NO-GO for a
+  speed bot. Untested: NBM/HRRR forecasts hours ahead.

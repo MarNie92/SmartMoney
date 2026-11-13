@@ -141,6 +141,40 @@ If any check fails: stop the strategy search (no paper trading).
       data faster and more precisely than hourly METAR + 24 h old
       forecasts.
 
+## Phase 1f: Real-time weather bot, data feasibility (2026-11-12)
+
+Option A (separate project, never inside SmartMoney): a bot reacting to
+live station data. Abort criterion set before the checks: stop if the
+data is not fast or precise enough.
+
+- [x] Observations: aviationweather.gov METAR API (free) carries the
+      tenths-°C T-group for US stations (resolution precision); international
+      stations report whole °C every 20-30 min. Measured public visibility of
+      routine US METARs: 2.7-3.3 min after the observation time (10 stations,
+      23:5x UTC cycle); international 3.5-7 min.
+- [x] Higher frequency: NWS API 5-minute ASOS values exist but only in whole
+      °C, with gaps, and became visible ~22 min late. Synoptic one-minute
+      ASOS (experimental) documents 2-5 min latency, HF-METAR 5-9 min. No
+      public source faster than the METAR API was found.
+- [x] Forecasts: HRRR on AWS (public domain) f00 ~51 min after init,
+      f18 ~85 min; NBM station text bulletins (`blend_nbstx`) 38-55 min
+      after init with daily max/min (TXN) and spread (XND) per US station.
+      Not available for international stations.
+- [x] Polymarket: CLOB websocket ~2400 price updates / 90 s for 200 weather
+      markets, jitter ~6 ms. Weather volume ~$1.2M / 24 h, only ~30 % at US
+      stations (~$370k / day over 16 cities).
+- [x] Reaction speed (`weather-reaction`, 120 days, 51k buckets ruled out by
+      a routine METAR, 27 misclassified = 0.05 %): stale quotes on dead
+      buckets are harvested 0-3 min after the observation, i.e. before the
+      METAR is public. US, all dead buckets: harvesters' profit (lower bound)
+      $28k in 0-3 min vs $7.8k later over 120 days (~$65 / day for all US
+      cities, shared with competitors). Misclassified buckets carried most of
+      the late "dead" volume: a wrong call costs the full stake.
+- **Result: NO-GO.** The public data arrives after the race is decided; the
+  remaining slack is too small to pay for the effort and risk. Not tested:
+  NBM/HRRR-based forecasts hours ahead (archive on AWS since 2020); low
+  expectation given Phase 1d, would need its own pre-registered criterion.
+
 ## Phase 2: Signal pipeline
 
 - [ ] `Signal` type and `signals` table: kind (insider / mirror), trade,
