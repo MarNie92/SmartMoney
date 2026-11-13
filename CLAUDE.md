@@ -247,3 +247,12 @@ Milestones 1-3 done.
   -0.0001, CI -0.0003..+0.0002); >= 2-point divergences in ~1.6 % of
   outcomes, too few for the registered strategy. Top-5 football
   moneylines are glued to the sharp line in the final hour.
+- Anchor secondary 2026-11-14 (`anchor --secondary`, Phase 1g-b,
+  pre-registered; Championship, 2. Bundesliga, La Liga 2, Serie B,
+  Ligue 2, Primeira Liga, Scottish Premiership): FAILED checks 1+3
+  (overall advantage -0.0002, CI -0.0010..+0.0006; half 1 -0.0010).
+  Texture: >= 2-point divergences ~2x more common than top-5 (2.8 %),
+  half 2 weakly anchor-positive (+0.0006, CI +0.0000..+0.0011),
+  out-of-sample ROI of the registered rule +14.4 % (101 bets, CI
+  -19..+48). Secondary books are less glued but not provably soft;
+  only clean next step: forward paper test with live sharp quotes.

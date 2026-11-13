@@ -235,6 +235,20 @@ cups (Copa del Rey $25M, DFB-Pokal $14M, FA Cup), MLS, Brasileirão and
 K League (football-data's extra files carry non-closing odds only), and
 Champions/Europa League (no match moneylines under those tags).
 
+**Result: FAILED** (first run 2026-11-14). Join 2057 of 2293 matches
+(0 ambiguous, 0 truth mismatches), 4747 of 6171 outcomes priced
+(thinner books than the top 5). Checks 1 and 3 failed: the anchor is
+not more accurate overall (advantage -0.0002, CI -0.0010..+0.0006) and
+half 1 is negative (-0.0010). The texture does differ from the top-5
+leagues: >= 2-point divergences are about twice as common (2.8 % of
+outcomes), half 2 is marginally anchor-positive (+0.0006, CI
++0.0000..+0.0011) and the registered 2-point strategy earned +14.4 %
+out of sample (101 bets in 85 matches, CI -19..+48, check 4 passed).
+Per the pre-registration this is a fail; the historical strategy
+search stops here. The only clean continuation is a pre-registered
+forward paper test against live sharp quotes (e.g. Betfair's delayed
+feed) once the Phase 2/5 signal + paper-trading pipeline exists.
+
 ## Phase 2: Signal pipeline
 
 - [ ] `Signal` type and `signals` table: kind (insider / mirror), trade,
