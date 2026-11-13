@@ -12,6 +12,7 @@ use smartmoney_backtest::calibration;
 use smartmoney_backtest::dataset::{self, Dataset, LoadOptions};
 use smartmoney_backtest::fullhistory::{self, FullHistoryOptions};
 use smartmoney_backtest::nowcast;
+use smartmoney_backtest::reaction;
 use smartmoney_backtest::smart::{self, SmartConfig};
 use smartmoney_backtest::statusquo;
 use smartmoney_backtest::{
@@ -237,6 +238,12 @@ enum Command {
     /// Diagnostic: does the observed daily extreme (IEM routine METARs) fall
     /// into the bucket that actually won?
     WeatherTruthCheck {
+        #[arg(long, default_value_t = 120)]
+        days: i64,
+    },
+    /// Phase-1 diagnostic: how long do buckets ruled out by a routine METAR
+    /// keep trading at stale prices, and who takes them how fast?
+    WeatherReaction {
         #[arg(long, default_value_t = 120)]
         days: i64,
     },
@@ -1266,6 +1273,66 @@ async fn main() -> anyhow::Result<()> {
             (
                 "weather_truth_check",
                 serde_json::json!({ "groups": by.iter().map(|(k, v)| (k.clone(), v.0, v.1)).collect::<Vec<_>>() }),
+            )
+        }
+        Command::WeatherReaction { days } => {
+            let data = weather_load::load(&client, days, 60, now).await?;
+            let stations = weather_load::station_data_v2(&client, &data.events, 60).await?;
+            let rcfg = reaction::ReactionConfig::default();
+            let dead = reaction::dead_buckets(&data.events, &data.trades, &stations, &rcfg);
+            println!(
+                "Reaktions-Diagnose: Spannen, die eine reguläre METAR-Messung unmöglich gemacht hat \
+                 (Maximum über der Obergrenze bzw. Minimum unter der Untergrenze, Rundung + Sicherheitsabstand).\n\
+                 Abstand = Zeit nach der Messung (US: Minute :51, öffentlich ca. 3 min später). Gezählt werden \
+                 Trades mit YES-Preis >= {:.0}¢. Abräumer = Taker, die YES verkaufen bzw. NO kaufen.",
+                rcfg.stale_price * 100.0
+            );
+            let surprise =
+                |d: &&reaction::DeadBucket| d.pre_price.is_some_and(|p| p >= rcfg.surprise_price);
+            let unit_of = |d: &&reaction::DeadBucket| data.events[d.event].unit;
+            let groups: Vec<(String, Vec<&reaction::DeadBucket>)> = vec![
+                ("Alle".into(), dead.iter().collect()),
+                (
+                    "Alle, ohne trotzdem gewonnene".into(),
+                    dead.iter().filter(|d| !d.won).collect(),
+                ),
+                (
+                    "Alle, US (°F)".into(),
+                    dead.iter()
+                        .filter(|d| unit_of(d) == weather::Unit::F)
+                        .collect(),
+                ),
+                (
+                    format!(
+                        "Überraschend (Preis davor >= {:.0}¢)",
+                        rcfg.surprise_price * 100.0
+                    ),
+                    dead.iter().filter(surprise).collect(),
+                ),
+                (
+                    "Überraschend, US (°F)".into(),
+                    dead.iter()
+                        .filter(surprise)
+                        .filter(|d| unit_of(d) == weather::Unit::F)
+                        .collect(),
+                ),
+                (
+                    "Überraschend, international (°C)".into(),
+                    dead.iter()
+                        .filter(surprise)
+                        .filter(|d| unit_of(d) == weather::Unit::C)
+                        .collect(),
+                ),
+            ];
+            let mut summaries = Vec::new();
+            for (name, list) in &groups {
+                let s = reaction::summarize(name, list, &data.events, &data.trades, &rcfg);
+                print!("{}", reaction::table(&s));
+                summaries.push(s);
+            }
+            (
+                "weather_reaction",
+                serde_json::json!({ "groups": summaries }),
             )
         }
     };
