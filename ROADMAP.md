@@ -210,6 +210,20 @@ Design, registered before the first run (`backtest anchor`):
   a PASS overstates what is tradable and must be confirmed by a forward
   paper test with real-time quotes before anything else is built.
 
+**Result: FAILED** (first run 2026-11-13; four leagues, because
+Polymarket lists no men's Serie A match events, that tag holds only
+specials). Pipeline quality: 1173 of 1222 matches joined, 0 ambiguous,
+0 truth mismatches, 3458 of 3519 outcomes priced. Finding: the last
+pre-kickoff Polymarket price is statistically identical to the
+de-vigged closing line; Brier advantage -0.0001 (CI -0.0003..+0.0002),
+per league |advantage| <= 0.0004 with all CIs straddling 0. Divergences
+of >= 2 points occur in ~1.6 % of outcomes (27 half-1 bets, ROI +41 %
+but CI -80..+163 %); no threshold reaches the required 30 half-1 bets.
+Conclusion: top-5 football moneylines on Polymarket are glued to the
+sharp line in the final hour before kickoff; a borrowed-sharp-line
+strategy has no room there. The pre-match edges of the profiled wallets
+must come from earlier windows, smaller markets or selection/luck.
+
 ## Phase 2: Signal pipeline
 
 - [ ] `Signal` type and `signals` table: kind (insider / mirror), trade,

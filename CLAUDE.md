@@ -60,6 +60,13 @@ dashboard is reached only via Tailscale (no public port) with a token.
 - Rate limits (per 10 s): Data v2 general 800, `/v2/trades` 300; Gamma
   `/markets` 300; CLOB `/book` 1500; 429 + `Retry-After`. Our client paces
   to `max_requests_per_10s` (default 50) and retries 429/5xx with backoff.
+- Gamma `/events` and `/events/keyset` with `limit` > 50 answer 406
+  `gzip_required` without `Accept-Encoding: gzip` (since ~2026-11-13;
+  reqwest's gzip feature handles it, curl needs `--compressed`).
+- Sports: per match one moneyline event (three binary markets, questions
+  "Will X win on <date>?" / "... end in a draw?") with `gameStartTime` and
+  `sportsMarketType` on the market. No men's Serie A match events; the
+  `serie-a` tag carries only specials.
 - Volume: ~7 trades >= $2,000 per minute (2026-11-08), mostly sports.
 - Fees (docs.polymarket.com/trading/fees.md, checked 2026-11-10): taker only,
   `fee = shares * rate * p * (1 - p)` with `feeSchedule.rate` per market
@@ -227,3 +234,16 @@ Milestones 1-3 done.
   Buckets ruled out by a METAR are harvested within 0-3 min, before the
   METAR is public; later slack ~$65/day for all US cities. NO-GO for a
   speed bot. Untested: NBM/HRRR forecasts hours ahead.
+- Wallet timing profiles 2026-11-13 (two Reddit-sourced winners): both
+  earn pre-match, not deep in-play. Esports wallet 0xda3a...381f: best
+  edges 6-0 h before and 0-1 h after start (+7..+14 %), 1-3 h in-play
+  negative. Multi-sport wallet 0x0d6a1a...: tennis in-play ($2.1M, +3-6 %,
+  latency game) plus pre-match NHL/NBA/soccer (NHL $743k nearly all
+  pre-match, +12..+34 %; short sample, USD-weighted).
+- Anchor backtest 2026-11-13 (`anchor`, ROADMAP Phase 1g, pre-registered):
+  FAILED. 1173 joined matches (4 leagues, Feb-Nov 2026), 0 truth
+  mismatches; last pre-kickoff Polymarket price statistically identical
+  to the de-vigged Pinnacle/Betfair closing line (Brier advantage
+  -0.0001, CI -0.0003..+0.0002); >= 2-point divergences in ~1.6 % of
+  outcomes, too few for the registered strategy. Top-5 football
+  moneylines are glued to the sharp line in the final hour.
