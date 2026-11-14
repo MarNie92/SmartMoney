@@ -89,7 +89,7 @@ impl Default for CollectorConfig {
             gamma_api_url: "https://gamma-api.polymarket.com".into(),
             data_api_url: "https://data-api.polymarket.com".into(),
             clob_api_url: "https://clob.polymarket.com".into(),
-            minimum_trade_usd: 2000.0,
+            minimum_trade_usd: 1000.0,
             poll_interval_seconds: 30,
             max_requests_per_10s: 50,
             backoff_initial_ms: 500,
@@ -634,7 +634,7 @@ mod tests {
     fn defaults_are_valid() {
         let config = Config::default();
         config.validate().unwrap();
-        assert_eq!(config.collector.minimum_trade_usd, 2000.0);
+        assert_eq!(config.collector.minimum_trade_usd, 1000.0);
         assert_eq!(config.simulation.strategies.len(), 3);
         assert!(config.telegram.bot_token.is_none());
     }

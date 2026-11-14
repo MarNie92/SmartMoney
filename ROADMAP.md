@@ -281,11 +281,11 @@ Forward paper test of the two surviving candidates. Rules fixed below
 BEFORE the live start; any later rule change restarts the clock for
 that strategy. SmartMoney stays read-only: simulated fills only.
 
-- [ ] Engine (`smartmoney-sim`): one account per strategy, taker fills
+- [x] Engine (`smartmoney-sim`): one account per strategy, taker fills
       by walking the live CLOB book for the stake, fee
       `rate(category) x p x (1 - p)` per share, automatic settlement on
       resolution (tested), equity curve.
-- [ ] Strategy `favorites98` (pre-registered): trigger = stored BUY
+- [x] Strategy `favorites98` (live since 2026-11-14) (pre-registered): trigger = stored BUY
       trade >= $1000 at 95.0-98.0¢ whose market question is not a
       deadline pattern (status-quo matcher) and whose end date is
       >= 7 days away; paper-buy the same token with $100, at most one
@@ -293,7 +293,7 @@ that strategy. SmartMoney stays read-only: simulated fills only.
       settled positions or on 2027-02-06, whichever comes first:
       PASS = ROI after fees > 0 with >= 100 settled positions; tail
       losses reported explicitly.
-- [ ] Strategy `anchor2` (pre-registered): every poll, upcoming
+- [x] Strategy `anchor2` (code ready; waits for SMARTMONEY_ODDS_API_KEY) (pre-registered): every poll, upcoming
       moneyline events of the seven Phase 1g-b competitions inside the
       window 60-5 min before kickoff; anchor = de-vigged sharp quote
       (The Odds API, Pinnacle preferred, else median book), Polymarket
@@ -302,7 +302,7 @@ that strategy. SmartMoney stays read-only: simulated fills only.
       position per outcome market. Evaluation after >= 150 settled
       bets or on 2027-02-06: PASS = ROI after fees > 0 AND anchor
       Brier beats the entry mid with match-clustered 95 % CI > 0.
-- [ ] Stats view: P&L, hit rate, edge vs entry price, drawdown per
+- [x] Dashboard page /sim (accounts, positions, equity); still open: P&L, hit rate, edge vs entry price, drawdown per
       strategy; score-based strategies (insider/mirror) reuse the same
       engine later.
 
