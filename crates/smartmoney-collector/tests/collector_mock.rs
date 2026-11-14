@@ -65,6 +65,8 @@ async fn setup() -> (MockServer, Collector, Store, mpsc::Receiver<CollectorEvent
         max_requests_per_10s: 10_000,
         backoff_initial_ms: 1,
         backoff_max_ms: 5,
+        // The fixtures were built for the old $2,000 threshold.
+        minimum_trade_usd: 2000.0,
         ..Default::default()
     };
     let store = Store::open_in_memory().await.unwrap();
@@ -146,6 +148,8 @@ async fn retries_after_rate_limit() {
         max_requests_per_10s: 10_000,
         backoff_initial_ms: 1,
         backoff_max_ms: 5,
+        // The fixtures were built for the old $2,000 threshold.
+        minimum_trade_usd: 2000.0,
         ..Default::default()
     };
     let client = PolymarketClient::new(&cfg).unwrap();
