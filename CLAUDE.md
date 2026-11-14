@@ -80,6 +80,20 @@ dashboard is reached only via Tailscale (no public port) with a token.
 - Dev machine: Windows 11, Rust via rustup (`~/.cargo/bin`, may need to be
   added to PATH in Git Bash), MSVC Build Tools 2022 installed.
 
+## Deployment (live since 2026-11-14)
+
+Runs on an Oracle Cloud Always Free VM (Ampere A1, 4 OCPU / 24 GB,
+eu-frankfurt-1 AD-2, Ubuntu 24.04, hostname `oddshunter`). Console
+capacity errors were solved by launching through the OCI API across all
+three availability domains: AD-1 was full, AD-2 free. systemd unit
+`smartmoney`, binary `/opt/smartmoney/bin`, database
+`/var/lib/smartmoney/smartmoney.db`, secrets in
+`/etc/smartmoney/smartmoney.env` (640 root:smartmoney), nightly backup
+timer 03:30 UTC keeping seven archives. Dashboard binds to the
+Tailscale address only; no public port but SSH. Setup steps and
+everyday commands: `docs/DEPLOY.md`. The user wants the project renamed
+to OddsHunter after their holiday (2026-11-16 to ~11-23).
+
 ## Current status
 
 The plan lives in `ROADMAP.md` (phases 1-8); update its checkboxes as work
