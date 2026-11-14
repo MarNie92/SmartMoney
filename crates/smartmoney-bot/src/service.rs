@@ -45,38 +45,12 @@ impl Bot {
         self.notify(&alert_message(s)).await;
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn notify_fill(
-        &self,
-        strategy: &str,
-        label: &str,
-        shares: f64,
-        avg_price: f64,
-        cost_usd: f64,
-        fee_usd: f64,
-    ) {
-        self.notify(&fill_message(
-            strategy, label, shares, avg_price, cost_usd, fee_usd,
-        ))
-        .await;
+    pub async fn notify_fill(&self, fill: &crate::format::Fill<'_>) {
+        self.notify(&fill_message(fill)).await;
     }
 
-    pub async fn notify_settle(
-        &self,
-        strategy: &str,
-        title: &str,
-        shares: f64,
-        payout_usd: f64,
-        realized_pnl: f64,
-    ) {
-        self.notify(&settle_message(
-            strategy,
-            title,
-            shares,
-            payout_usd,
-            realized_pnl,
-        ))
-        .await;
+    pub async fn notify_settle(&self, settlement: &crate::format::Settlement<'_>) {
+        self.notify(&settle_message(settlement)).await;
     }
 
     /// Start of the current day in Berlin, as a unix timestamp.

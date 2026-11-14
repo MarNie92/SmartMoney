@@ -140,18 +140,34 @@ async fn main() -> anyhow::Result<()> {
                                 match &e {
                                     smartmoney_sim::SimEvent::Opened {
                                         strategy, label, shares, avg_price, cost_usd, fee_usd,
+                                        slug, event_slug,
                                     } => {
-                                        bot.notify_fill(
-                                            strategy, label, *shares, *avg_price, *cost_usd,
-                                            *fee_usd,
-                                        )
+                                        bot.notify_fill(&smartmoney_bot::format::Fill {
+                                            strategy,
+                                            label,
+                                            shares: *shares,
+                                            avg_price: *avg_price,
+                                            cost_usd: *cost_usd,
+                                            fee_usd: *fee_usd,
+                                            slug: slug.as_deref(),
+                                            event_slug: event_slug.as_deref(),
+                                        })
                                         .await;
                                     }
                                     smartmoney_sim::SimEvent::Settled {
                                         strategy, title, shares, payout_usd, realized_pnl,
+                                        slug, event_slug,
                                     } => {
                                         bot.notify_settle(
-                                            strategy, title, *shares, *payout_usd, *realized_pnl,
+                                            &smartmoney_bot::format::Settlement {
+                                                strategy,
+                                                title,
+                                                shares: *shares,
+                                                payout_usd: *payout_usd,
+                                                realized_pnl: *realized_pnl,
+                                                slug: slug.as_deref(),
+                                                event_slug: event_slug.as_deref(),
+                                            },
                                         )
                                         .await;
                                     }
