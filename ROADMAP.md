@@ -275,15 +275,36 @@ feed) once the Phase 2/5 signal + paper-trading pipeline exists.
 - [ ] Chat whitelist; per-strategy alert thresholds; daily digest against
       alert noise
 
-## Phase 5: Paper trading (milestone 6)
+## Phase 5: Paper trading (milestone 6, pulled forward 2026-11-14)
 
-- [ ] One account per strategy (e.g. insider 60/70/80, mirror top,
-      manual)
-- [ ] Fills against the order book snapshot plus configurable delay,
-      slippage from book depth, fees
-- [ ] Mark-to-market, automatic settlement on resolution (tested)
-- [ ] Stats: P&L, hit rate, edge vs price, P&L per score bucket and
-      category, max drawdown, average move between signal and entry
+Forward paper test of the two surviving candidates. Rules fixed below
+BEFORE the live start; any later rule change restarts the clock for
+that strategy. SmartMoney stays read-only: simulated fills only.
+
+- [ ] Engine (`smartmoney-sim`): one account per strategy, taker fills
+      by walking the live CLOB book for the stake, fee
+      `rate(category) x p x (1 - p)` per share, automatic settlement on
+      resolution (tested), equity curve.
+- [ ] Strategy `favorites98` (pre-registered): trigger = stored BUY
+      trade >= $1000 at 95.0-98.0¢ whose market question is not a
+      deadline pattern (status-quo matcher) and whose end date is
+      >= 7 days away; paper-buy the same token with $100, at most one
+      position per market; hold to resolution. Evaluation after >= 100
+      settled positions or on 2027-02-06, whichever comes first:
+      PASS = ROI after fees > 0 with >= 100 settled positions; tail
+      losses reported explicitly.
+- [ ] Strategy `anchor2` (pre-registered): every poll, upcoming
+      moneyline events of the seven Phase 1g-b competitions inside the
+      window 60-5 min before kickoff; anchor = de-vigged sharp quote
+      (The Odds API, Pinnacle preferred, else median book), Polymarket
+      price = CLOB midpoint; |anchor - mid| >= 2 points buys the
+      anchor side with $100 (taker, walking the book), at most one
+      position per outcome market. Evaluation after >= 150 settled
+      bets or on 2027-02-06: PASS = ROI after fees > 0 AND anchor
+      Brier beats the entry mid with match-clustered 95 % CI > 0.
+- [ ] Stats view: P&L, hit rate, edge vs entry price, drawdown per
+      strategy; score-based strategies (insider/mirror) reuse the same
+      engine later.
 
 ## Phase 6: Full dashboard (milestone 7)
 
