@@ -8,4 +8,4 @@ pub mod engine;
 pub mod favorites;
 pub mod service;
 
-pub use service::SimService;
+pub use service::{SimEvent, SimService};

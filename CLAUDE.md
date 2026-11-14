@@ -12,7 +12,7 @@ The user communicates in German; code, commits and docs are in English.
 
 Rust 2021 Cargo workspace, crates prefixed `smartmoney-`:
 `core` (types, config), `collector`, `store` (SQLite/sqlx), `scorer`, `bot`
-(teloxide), `web` (axum, SSR / light JS), `sim`, `backtest` (CLI), plus the
+(Telegram HTTP API via reqwest, no framework), `web` (axum, SSR / light JS), `sim`, `backtest` (CLI), plus the
 binary `apps/smartmoney-daemon` running all services on tokio.
 Target: headless Oracle Cloud Always Free VM (Ampere, aarch64 Linux); the
 dashboard is reached only via Tailscale (no public port) with a token.

@@ -265,15 +265,18 @@ feed) once the Phase 2/5 signal + paper-trading pipeline exists.
 - [ ] Collector polls trades of watched wallets (any size) and emits mirror
       signals with a delay-aware entry price
 
-## Phase 4: Telegram bot (milestone 5)
+## Phase 4: Telegram bot (milestone 5; first slice live 2026-11-14)
 
-- [ ] Alerts for both signal kinds: market, side, size, entry and current
-      price, move since entry, order book depth, link, reasons
+- [x] Plain Telegram HTTP API (reqwest, no framework; CLAUDE.md updated)
+- [x] Alerts: insider trades at or above the score threshold, paper
+      fills and paper settlements with P&L
+- [x] Chat whitelist (unknown chats are told their chat id), daily
+      digest 19:00 Europe/Berlin, `/status` command
 - [ ] Inline buttons: "Sim 10 $ / 50 $ / Ignorieren"
-- [ ] Commands: `/wallet`, `/threshold`, `/watch`, `/unwatch`, `/top`,
-      `/wallets`, `/status`, `/portfolio`, `/sim_stats`, `/sim_reset`
-- [ ] Chat whitelist; per-strategy alert thresholds; daily digest against
-      alert noise
+- [ ] More commands: `/wallet`, `/threshold`, `/watch`, `/unwatch`,
+      `/top`, `/wallets`, `/portfolio`, `/sim_stats`, `/sim_reset`
+- [ ] Richer alert context: current price, move since entry, book depth,
+      market link
 
 ## Phase 5: Paper trading (milestone 6, pulled forward 2026-11-14)
 

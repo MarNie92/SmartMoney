@@ -255,6 +255,19 @@ impl Store {
         Ok(())
     }
 
+    /// Positions settled at or after `since`, newest first.
+    pub async fn sim_settled_since(&self, since: i64) -> Result<Vec<SimPosition>> {
+        Ok(sqlx::query_as(&format!(
+            "SELECT {POSITION_COLUMNS} FROM sim_positions p
+             LEFT JOIN markets m ON m.condition_id = p.condition_id
+             WHERE p.status = 'settled' AND p.settled_at >= ?
+             ORDER BY p.settled_at DESC",
+        ))
+        .bind(since)
+        .fetch_all(self.pool())
+        .await?)
+    }
+
     /// Equity series of one account, oldest first.
     pub async fn sim_equity(&self, account_id: i64, limit: i64) -> Result<Vec<(i64, f64)>> {
         let rows: Vec<(i64, f64)> = sqlx::query_as(
