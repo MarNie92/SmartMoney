@@ -24,3 +24,9 @@ logs/
 .DS_Store
 Thumbs.db
 backtest_cache/
+
+# Private keys (API keys, SSH keys) must never be committed.
+*.pem
+*.key
+id_*
+!*.pub
