@@ -80,6 +80,26 @@ dashboard is reached only via Tailscale (no public port) with a token.
 - Dev machine: Windows 11, Rust via rustup (`~/.cargo/bin`, may need to be
   added to PATH in Git Bash), MSVC Build Tools 2022 installed.
 
+## Score fix 2026-11-15 (SCORER_VERSION 2)
+
+The user noticed that live alerts clustered at score 61 and were mostly
+big sports games. Diagnosis from the live database: additive weights
+freshness 25 + relative size 20 + concentration 15 equal the alert
+threshold 60, and concentration is not independent of freshness (a
+fresh wallet has one position by construction: 63 % of fresh wallets
+scored maximum concentration vs 24 % of established ones). So any
+fresh wallet buying big and concentrated alerted, with sports adding
+15 x 0.1 = 1.5 -> 61. 34 of 86 alerts sat at exactly 61; 74 % had
+neither a longshot price nor a wallet cluster; mean 24 h volume of the
+alerted markets was $266k (liquid public markets, not niches). Fix:
+the additive mode now damps concentration by freshness
+(conc x (1 - fresh_factor)), which the multiplicative mode always did.
+Replaying stored scores: 89 alerts -> 7, sports 43 -> 0, crypto 5 -> 0,
+remaining ones politics (2) and corporate (5). Old rows keep their v1
+scores; the backfill only scores trades that have no score row, so a
+version bump deliberately does not rescore (that would re-alert
+history over Telegram).
+
 ## Deployment (live since 2026-11-14)
 
 Runs on an Oracle Cloud Always Free VM (Ampere A1, 4 OCPU / 24 GB,
