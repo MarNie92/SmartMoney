@@ -362,6 +362,32 @@ impl PolymarketClient {
             .await?
             .value)
     }
+    /// Open (not yet closed) events with a tag, soonest end first.
+    pub async fn open_events(
+        &self,
+        tag_slug: &str,
+        limit: usize,
+    ) -> Result<Vec<GammaEventWithMarkets>, ApiError> {
+        let query = vec![
+            ("tag_slug", tag_slug.to_owned()),
+            ("closed", "false".to_owned()),
+            ("order", "endDate".to_owned()),
+            ("ascending", "true".to_owned()),
+            ("limit", limit.to_string()),
+        ];
+        let raw = self
+            .fetch_value(&format!("{}/events", self.gamma_url), &query)
+            .await?;
+        Ok(raw
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| GammaEventWithMarkets::from_value(v).ok())
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
     /// Closed events with a tag (Gamma `/events`), most recently ended first.
     /// `end_date_max` is an RFC 3339 timestamp.
     pub async fn closed_events(

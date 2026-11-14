@@ -2013,7 +2013,19 @@ dependencies = [
 name = "smartmoney-sim"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "smartmoney-collector",
  "smartmoney-core",
+ "smartmoney-scorer",
+ "smartmoney-store",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "wiremock",
 ]
 
 [[package]]
