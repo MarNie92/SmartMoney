@@ -101,6 +101,14 @@ Live API tests (network, ignored by default):
 cargo test -p smartmoney-collector --test live_api -- --ignored --nocapture
 ```
 
+## Deployment
+
+For continuous operation, deploy to an Oracle Cloud Always Free VM
+(Ampere/aarch64, Ubuntu) reachable over Tailscale:
+[docs/DEPLOY.md](docs/DEPLOY.md). `deploy/install.sh` builds the
+daemon, installs it under systemd with a nightly SQLite backup, and
+keeps secrets in `/etc/smartmoney/smartmoney.env` outside the repo.
+
 ## Workspace
 
 | Crate | Purpose |
@@ -109,7 +117,7 @@ cargo test -p smartmoney-collector --test live_api -- --ignored --nocapture
 | `smartmoney-collector` | Polls Polymarket APIs, rate limiting with backoff |
 | `smartmoney-store` | SQLite via sqlx, migrations |
 | `smartmoney-scorer` | Insider score per trade / wallet |
-| `smartmoney-bot` | Telegram bot (teloxide) |
+| `smartmoney-bot` | Telegram alerts (plain Bot API over reqwest) |
 | `smartmoney-web` | axum server with mobile-first dashboard |
 | `smartmoney-sim` | Paper trading |
 | `smartmoney-backtest` | CLI replaying resolved markets |

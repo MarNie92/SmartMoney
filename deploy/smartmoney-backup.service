@@ -1,0 +1,14 @@
+[Unit]
+Description=SmartMoney SQLite backup
+Documentation=https://github.com/MarNie92/SmartMoney
+
+[Service]
+Type=oneshot
+User=smartmoney
+Group=smartmoney
+ExecStart=/opt/smartmoney/bin/backup.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/smartmoney
