@@ -299,11 +299,14 @@ mod tests {
         let second = add_trade(&store, "0x3", "0xb", Side::Buy, T0 + 600, 0.04).await;
         let (score_id, b2) = scorer.score_trade(second).await.unwrap().unwrap();
         assert_eq!(b2.cluster_bonus, 10.0);
-        // Fresh 25 + asym 25 + size 20 (5k of 20k) + conc 15 + personnel 15 + cluster 10.
-        assert_eq!(b2.total, 100.0);
+        // Fresh 25 + asym 25 + size 20 (5k of 20k) + personnel 15 + cluster
+        // 10. Concentration stays at 0: the wallet is fresh, so holding a
+        // single market says nothing beyond its freshness.
+        assert_eq!(b2.concentration, 0.0);
+        assert_eq!(b2.total, 95.0);
 
         let stored = store.scored_trade(score_id).await.unwrap().unwrap();
-        assert_eq!(stored.total, 100.0);
+        assert_eq!(stored.total, 95.0);
         assert_eq!(stored.category.as_deref(), Some("personnel"));
         let details: serde_json::Value = serde_json::from_str(&stored.details_json).unwrap();
         assert_eq!(details["cluster_bonus"]["fresh_wallets"], 2);

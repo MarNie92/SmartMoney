@@ -12,7 +12,7 @@ use smartmoney_core::{MarketCategory, Side};
 use smartmoney_store::{MarketRecord, PositionRecord, WalletRecord};
 
 /// Increment when the formula changes so old scores can be identified.
-pub const SCORER_VERSION: i64 = 1;
+pub const SCORER_VERSION: i64 = 2;
 const DAY: f64 = 86_400.0;
 
 /// The trade being scored.
@@ -195,17 +195,24 @@ pub fn score(input: &ScoreInput<'_>, cfg: &ScoringConfig) -> ScoreBreakdown {
         market_type,
         cluster_bonus,
     ) = match cfg.mode {
+        // A brand-new wallet is always "concentrated": it holds a single
+        // position because it is new, not because it picked one market.
+        // Counting both would double-count freshness, and freshness +
+        // relative size + concentration alone reach the alert threshold,
+        // so every fresh big buyer fired an alert (live observation
+        // 2026-11-15: 34 of 86 alerts sat at exactly 61 points, 74 % of
+        // them without any longshot price or wallet cluster). Damping
+        // concentration by freshness is what the multiplicative mode has
+        // always done; the additive mode now does it too.
         ScoreMode::Additive => (
             round2(w.wallet_freshness * fresh_factor),
             round2(w.price_asymmetry * asym_factor),
             round2(w.relative_size * size_factor),
-            round2(w.concentration * conc_factor),
+            round2(w.concentration * conc_factor * (1.0 - fresh_factor)),
             round2(w.market_type * type_factor),
             round2(cluster_points),
         ),
         ScoreMode::Multiplicative => {
-            // A brand-new wallet is always "concentrated"; only count
-            // concentration to the extent the wallet has history.
             let conc_effective = conc_factor * (1.0 - fresh_factor);
             let max_base = w.wallet_freshness
                 + w.price_asymmetry
@@ -380,10 +387,27 @@ mod tests {
         assert_eq!(s.wallet_freshness, 25.0);
         assert_eq!(s.price_asymmetry, 25.0);
         assert_eq!(s.relative_size, 20.0);
-        assert_eq!(s.concentration, 15.0);
+        assert_eq!(
+            s.concentration, 0.0,
+            "a fresh wallet holds one market by construction, not by choice"
+        );
         assert_eq!(s.market_type, 15.0);
         assert_eq!(s.cluster_bonus, 10.0);
-        assert_eq!(s.total, 100.0, "capped at 100");
+        assert_eq!(s.total, 95.0);
+
+        // An established wallet that is genuinely all-in still scores it,
+        // and the total is capped at 100.
+        let veteran = wallet(Some(400.0), Some(300));
+        let s2 = run(
+            &trade(0.03, 5_000.0),
+            Some(&veteran),
+            Some(&m),
+            &[pos("0xm", 5_000.0)],
+            2,
+        );
+        assert_eq!(s2.concentration, 15.0);
+        assert_eq!(s2.wallet_freshness, 0.0);
+        assert_eq!(s2.total, 85.0);
     }
 
     #[test]
@@ -593,8 +617,12 @@ mod tests {
         assert_eq!(s.market_type, 0.0);
         // (25 + 20) / 95 * 100 * 0.1
         assert!((s.total - 4.74).abs() < 0.02, "total {}", s.total);
-        // Same trade in additive mode is an alert.
-        assert!(run(&trade(0.6, 5_400.0), Some(&w), Some(&sports), &[], 0).total >= 60.0);
+        // The additive mode damps concentration the same way, so this
+        // trade is no longer an alert there either: 25 fresh + 20 size +
+        // 1.5 sports = 46.5.
+        let additive = run(&trade(0.6, 5_400.0), Some(&w), Some(&sports), &[], 0);
+        assert_eq!(additive.concentration, 0.0);
+        assert!(additive.total < 60.0, "total {}", additive.total);
     }
 
     #[test]
