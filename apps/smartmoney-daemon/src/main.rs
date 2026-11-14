@@ -77,6 +77,7 @@ async fn main() -> anyhow::Result<()> {
     let scorer_task = tokio::spawn(scorer.run(collector_rx, Some(scorer_tx)));
 
     // Paper trading (simulation only; never places real orders).
+    let (sim_tx, mut sim_rx) = mpsc::channel::<smartmoney_sim::SimEvent>(256);
     let sim_client =
         PolymarketClient::new(&config.collector).context("building sim HTTP client")?;
     let sim = std::sync::Arc::new(
@@ -85,6 +86,7 @@ async fn main() -> anyhow::Result<()> {
             sim_client,
             config.simulation.clone(),
             chrono::Utc::now().timestamp(),
+            Some(sim_tx),
         )
         .await
         .context("starting paper trading")?,
@@ -96,14 +98,69 @@ async fn main() -> anyhow::Result<()> {
     );
     let sim_task = tokio::spawn(sim.clone().run(shutdown_rx.clone()));
 
+    // Telegram alerts (optional: needs SMARTMONEY_TELEGRAM_BOT_TOKEN).
+    let bot = match &config.telegram.bot_token {
+        Some(token) => {
+            let client = smartmoney_bot::TelegramClient::new(token.clone())
+                .context("building telegram client")?;
+            let bot = std::sync::Arc::new(smartmoney_bot::Bot::new(
+                client,
+                store.clone(),
+                config.telegram.allowed_chat_ids.clone(),
+            ));
+            tracing::info!(
+                chats = config.telegram.allowed_chat_ids.len(),
+                "telegram bot active"
+            );
+            Some(bot)
+        }
+        None => None,
+    };
+    let bot_task = bot
+        .clone()
+        .map(|b| tokio::spawn(b.run(shutdown_rx.clone())));
+
     // Logger and paper-trading consumer; the Telegram bot (milestone 5)
     // will join as a further consumer.
     let events_task = tokio::spawn({
         let store = store.clone();
         let scoring = config.scoring.clone();
         let sim = sim.clone();
+        let bot = bot.clone();
         async move {
-            while let Some(event) = scorer_rx.recv().await {
+            loop {
+                let event = tokio::select! {
+                    ev = scorer_rx.recv() => match ev {
+                        Some(e) => e,
+                        None => break,
+                    },
+                    ev = sim_rx.recv() => {
+                        if let Some(e) = ev {
+                            if let Some(bot) = &bot {
+                                match &e {
+                                    smartmoney_sim::SimEvent::Opened {
+                                        strategy, label, shares, avg_price, cost_usd, fee_usd,
+                                    } => {
+                                        bot.notify_fill(
+                                            strategy, label, *shares, *avg_price, *cost_usd,
+                                            *fee_usd,
+                                        )
+                                        .await;
+                                    }
+                                    smartmoney_sim::SimEvent::Settled {
+                                        strategy, title, shares, payout_usd, realized_pnl,
+                                    } => {
+                                        bot.notify_settle(
+                                            strategy, title, *shares, *payout_usd, *realized_pnl,
+                                        )
+                                        .await;
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                };
                 sim.handle_event(&event).await;
                 match event {
                     ScorerEvent::Scored {
@@ -128,6 +185,9 @@ async fn main() -> anyhow::Result<()> {
                             );
                             if total >= threshold {
                                 tracing::warn!("ALERT {line}");
+                                if let Some(bot) = &bot {
+                                    bot.notify_alert(&s).await;
+                                }
                             } else {
                                 tracing::info!("{line}");
                             }
@@ -151,6 +211,9 @@ async fn main() -> anyhow::Result<()> {
     let _ = scorer_task.await;
     let _ = events_task.await;
     let _ = sim_task.await;
+    if let Some(t) = bot_task {
+        let _ = t.await;
+    }
     store.pool().close().await;
     Ok(())
 }

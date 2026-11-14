@@ -12,13 +12,34 @@ use smartmoney_core::fees::fee_rate;
 use smartmoney_scorer::ScorerEvent;
 use smartmoney_store::sim::NewSimPosition;
 use smartmoney_store::Store;
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
 pub const ODDS_BASE: &str = "https://api.the-odds-api.com/v4";
 /// Reject fills when the book absorbs less than this share of the stake.
 const MIN_FILL_FRACTION: f64 = 0.5;
 const EQUITY_EVERY_S: i64 = 3600;
+
+/// Notification about a paper-trading action (for alert consumers).
+#[derive(Debug, Clone, PartialEq)]
+pub enum SimEvent {
+    Opened {
+        strategy: String,
+        label: String,
+        shares: f64,
+        avg_price: f64,
+        cost_usd: f64,
+        fee_usd: f64,
+    },
+    Settled {
+        strategy: String,
+        title: String,
+        shares: f64,
+        payout_usd: f64,
+        realized_pnl: f64,
+    },
+}
 
 fn now_ts() -> i64 {
     chrono::Utc::now().timestamp()
@@ -122,6 +143,8 @@ pub struct SimService {
     anchor_account: Option<i64>,
     http: reqwest::Client,
     odds_base: String,
+    events: Option<mpsc::Sender<SimEvent>>,
+    strategies: HashMap<i64, String>,
 }
 
 impl SimService {
@@ -130,6 +153,7 @@ impl SimService {
         client: PolymarketClient,
         cfg: SimulationConfig,
         now: i64,
+        events: Option<mpsc::Sender<SimEvent>>,
     ) -> anyhow::Result<Self> {
         let favorites_account = if cfg.favorites.enabled {
             let json = serde_json::to_string(&cfg.favorites)?;
@@ -158,12 +182,21 @@ impl SimService {
         } else {
             None
         };
+        let mut strategies = HashMap::new();
+        if let Some(id) = favorites_account {
+            strategies.insert(id, "favorites98".to_owned());
+        }
+        if let Some(id) = anchor_account {
+            strategies.insert(id, "anchor2".to_owned());
+        }
         Ok(Self {
             store,
             client,
             cfg,
             favorites_account,
             anchor_account,
+            events,
+            strategies,
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
                 .build()?,
@@ -175,6 +208,12 @@ impl SimService {
     pub fn with_odds_base(mut self, base: &str) -> Self {
         self.odds_base = base.to_owned();
         self
+    }
+
+    async fn emit(&self, event: SimEvent) {
+        if let Some(tx) = &self.events {
+            let _ = tx.send(event).await;
+        }
     }
 
     pub fn favorites_active(&self) -> bool {
@@ -295,6 +334,15 @@ impl SimService {
                     plan.fee_usd,
                     label.unwrap_or(condition_id)
                 );
+                self.emit(SimEvent::Opened {
+                    strategy: strategy.to_owned(),
+                    label: label.unwrap_or(condition_id).to_owned(),
+                    shares: plan.shares,
+                    avg_price: plan.avg_price,
+                    cost_usd: plan.cost_usd,
+                    fee_usd: plan.fee_usd,
+                })
+                .await;
                 Ok(())
             }
             Err(smartmoney_store::StoreError::Constraint(_)) => {
@@ -341,6 +389,18 @@ impl SimService {
                 p.shares.round(),
                 p.title.as_deref().unwrap_or(condition_id)
             );
+            self.emit(SimEvent::Settled {
+                strategy: self
+                    .strategies
+                    .get(&p.account_id)
+                    .cloned()
+                    .unwrap_or_else(|| "?".to_owned()),
+                title: p.title.clone().unwrap_or_else(|| condition_id.to_owned()),
+                shares: p.shares,
+                payout_usd: payout,
+                realized_pnl: realized,
+            })
+            .await;
         }
         Ok(())
     }

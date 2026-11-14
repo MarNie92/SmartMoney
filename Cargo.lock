@@ -1950,7 +1950,17 @@ dependencies = [
 name = "smartmoney-bot"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "chrono",
+ "chrono-tz",
+ "reqwest",
+ "serde",
+ "serde_json",
  "smartmoney-core",
+ "smartmoney-store",
+ "tokio",
+ "tracing",
+ "wiremock",
 ]
 
 [[package]]
@@ -1986,6 +1996,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "dotenvy",
+ "smartmoney-bot",
  "smartmoney-collector",
  "smartmoney-core",
  "smartmoney-scorer",
