@@ -319,9 +319,12 @@ that strategy. SmartMoney stays read-only: simulated fills only.
 
 ## Phase 7: Deployment (milestone 8)
 
-- [ ] aarch64 build (native on the VM or cross-compile)
-- [ ] systemd service with restart, daily SQLite backup (keep 7)
-- [ ] Tailscale guide, token setup
+- [x] aarch64 build: native on the VM via `deploy/install.sh` (no
+      Windows-only code in the workspace, so nothing to port)
+- [x] systemd service with restart, hardening and a nightly SQLite
+      backup timer keeping seven archives (`deploy/`)
+- [x] Tailscale and token setup documented in `docs/DEPLOY.md`,
+      including moving the existing database to the VM
 - [ ] Daily live API check with a Telegram message on failure
 - [ ] Data retention for order book snapshots and raw JSON
 
