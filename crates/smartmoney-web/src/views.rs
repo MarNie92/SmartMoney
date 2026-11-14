@@ -3,6 +3,7 @@
 use crate::format::{ago, category_label, cents, days, explain, short_addr, usd};
 use maud::{html, Markup, DOCTYPE};
 use smartmoney_core::config::ScoreWeights;
+use smartmoney_store::sim::{SimAccount, SimPosition};
 use smartmoney_store::{ScoredTrade, WalletRecord};
 
 /// Collector polls older than this are flagged as stale.
@@ -42,6 +43,7 @@ fn layout(title: &str, nav: &str, body: Markup) -> Markup {
                         a.brand href="/" { "SmartMoney" }
                         nav {
                             a href="/" aria-current=[(nav == "feed").then_some("page")] { "Feed" }
+                            a href="/sim" aria-current=[(nav == "sim").then_some("page")] { "Papierhandel" }
                         }
                     }
                     (body)
@@ -338,5 +340,92 @@ pub fn not_found() -> Markup {
         "Nicht gefunden – SmartMoney",
         "",
         html! { p.empty { "Diese Seite gibt es nicht. " a href="/" { "Zum Feed" } } },
+    )
+}
+
+/// One paper-trading account with its latest positions and equity.
+pub struct SimAccountView {
+    pub account: SimAccount,
+    pub positions: Vec<SimPosition>,
+    pub equity: Option<f64>,
+}
+
+fn sim_summary(v: &SimAccountView) -> Markup {
+    let settled: Vec<&SimPosition> = v
+        .positions
+        .iter()
+        .filter(|p| p.status == "settled")
+        .collect();
+    let open = v.positions.iter().filter(|p| p.status == "open").count();
+    let realized: f64 = settled.iter().filter_map(|p| p.realized_pnl).sum();
+    let wins = settled
+        .iter()
+        .filter(|p| p.realized_pnl.unwrap_or(0.0) > 0.0)
+        .count();
+    html! {
+        p.status {
+            "Kasse " (usd(v.account.cash))
+            @if let Some(e) = v.equity { " · Gesamtwert " (usd(e)) }
+            " · offen " (open)
+            " · abgerechnet " (settled.len())
+            @if !settled.is_empty() {
+                " (" (wins) " Gewinne) · realisiert "
+                span.pnl.neg[realized < 0.0] { (format!("{realized:+.2}$")) }
+            }
+        }
+    }
+}
+
+pub fn sim_page(accounts: &[SimAccountView], now: i64) -> Markup {
+    layout(
+        "Papierhandel – SmartMoney",
+        "sim",
+        html! {
+            h1 { "Papierhandel" }
+            @if accounts.is_empty() {
+                p.empty { "Noch keine Strategie-Konten. Der Daemon legt sie beim Start an." }
+            }
+            @for v in accounts {
+                section.sim-account {
+                    h2 { (v.account.strategy) }
+                    (sim_summary(v))
+                    @if v.positions.is_empty() {
+                        p.empty { "Noch keine Positionen." }
+                    } @else {
+                        table.sim {
+                            thead {
+                                tr {
+                                    th { "Zeit" }
+                                    th { "Markt" }
+                                    th.num { "Anteile" }
+                                    th.num { "Kurs" }
+                                    th.num { "Einsatz" }
+                                    th.num { "Ergebnis" }
+                                }
+                            }
+                            tbody {
+                                @for p in &v.positions {
+                                    tr {
+                                        td { (ago(p.opened_at, now)) }
+                                        td.title {
+                                            (p.title.as_deref().unwrap_or(&p.condition_id))
+                                        }
+                                        td.num { (format!("{:.0}", p.shares)) }
+                                        td.num { (cents(p.avg_price)) }
+                                        td.num { (usd(p.cost_usd)) }
+                                        td.num {
+                                            @match p.realized_pnl {
+                                                Some(r) => span.pnl.neg[r < 0.0] { (format!("{r:+.2}$")) },
+                                                None => span.muted { "offen" },
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
     )
 }

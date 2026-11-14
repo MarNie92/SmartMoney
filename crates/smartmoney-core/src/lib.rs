@@ -5,6 +5,7 @@
 
 pub mod classify;
 pub mod config;
+pub mod fees;
 pub mod secret;
 pub mod types;
 

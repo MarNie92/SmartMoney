@@ -3,6 +3,7 @@
 pub mod records;
 mod repo;
 pub mod scores;
+pub mod sim;
 mod stats;
 
 pub use records::*;
@@ -22,6 +23,8 @@ pub enum StoreError {
     Sqlx(#[from] sqlx::Error),
     #[error("migration error: {0}")]
     Migrate(#[from] sqlx::migrate::MigrateError),
+    #[error("constraint violated: {0}")]
+    Constraint(String),
 }
 
 pub type Result<T> = std::result::Result<T, StoreError>;

@@ -76,12 +76,35 @@ async fn main() -> anyhow::Result<()> {
     let scorer = Scorer::new(store.clone(), config.scoring.clone());
     let scorer_task = tokio::spawn(scorer.run(collector_rx, Some(scorer_tx)));
 
-    // Placeholder consumer until the bot and simulation (milestones 5/6) take over.
+    // Paper trading (simulation only; never places real orders).
+    let sim_client =
+        PolymarketClient::new(&config.collector).context("building sim HTTP client")?;
+    let sim = std::sync::Arc::new(
+        smartmoney_sim::SimService::new(
+            store.clone(),
+            sim_client,
+            config.simulation.clone(),
+            chrono::Utc::now().timestamp(),
+        )
+        .await
+        .context("starting paper trading")?,
+    );
+    tracing::info!(
+        favorites98 = sim.favorites_active(),
+        anchor2 = sim.anchor_active(),
+        "paper trading ready"
+    );
+    let sim_task = tokio::spawn(sim.clone().run(shutdown_rx.clone()));
+
+    // Logger and paper-trading consumer; the Telegram bot (milestone 5)
+    // will join as a further consumer.
     let events_task = tokio::spawn({
         let store = store.clone();
         let scoring = config.scoring.clone();
+        let sim = sim.clone();
         async move {
             while let Some(event) = scorer_rx.recv().await {
+                sim.handle_event(&event).await;
                 match event {
                     ScorerEvent::Scored {
                         score_id, total, ..
@@ -127,6 +150,7 @@ async fn main() -> anyhow::Result<()> {
     let _ = collector_task.await;
     let _ = scorer_task.await;
     let _ = events_task.await;
+    let _ = sim_task.await;
     store.pool().close().await;
     Ok(())
 }

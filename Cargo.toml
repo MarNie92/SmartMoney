@@ -39,6 +39,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 wiremock = "0.6"
 smartmoney-collector = { path = "crates/smartmoney-collector" }
 smartmoney-scorer = { path = "crates/smartmoney-scorer" }
+smartmoney-sim = { path = "crates/smartmoney-sim" }
 smartmoney-web = { path = "crates/smartmoney-web" }
 axum = "0.8"
 maud = "0.27"

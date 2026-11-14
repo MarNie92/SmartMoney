@@ -17,33 +17,7 @@ use std::collections::HashMap;
 
 const DAY: i64 = 86_400;
 
-/// Question patterns of deadline markets, where NO is the status quo.
-const DEADLINE_PATTERNS: &[&str] = &[
-    " by ",
-    " before ",
-    "by end of",
-    "by the end of",
-    " in 2025",
-    " in 2026",
-    " in 2027",
-    "this year",
-    "this month",
-    "this week",
-];
-
-/// Taker fee rate per category (docs.polymarket.com/trading/fees.md,
-/// 2026-11-10). Geopolitics is fee-free but cannot be told apart from
-/// politics here, so the higher rate is used (conservative).
-pub fn fee_rate(category: MarketCategory) -> f64 {
-    match category {
-        MarketCategory::CryptoPrice => 0.07,
-        MarketCategory::Sports | MarketCategory::Other => 0.05,
-        MarketCategory::Politics
-        | MarketCategory::Personnel
-        | MarketCategory::Corporate
-        | MarketCategory::Legal => 0.04,
-    }
-}
+pub use smartmoney_core::fees::fee_rate;
 
 /// Index of the "No" outcome of a Yes/No market.
 pub fn no_index(m: &MarketRecord) -> Option<usize> {
@@ -67,7 +41,7 @@ pub fn is_status_quo_market(m: &MarketRecord) -> bool {
         return false;
     }
     let q = m.question.as_deref().unwrap_or_default().to_lowercase();
-    q.starts_with("will ") && DEADLINE_PATTERNS.iter().any(|p| q.contains(p))
+    smartmoney_core::fees::is_deadline_question(&q)
 }
 
 #[derive(Debug, Clone)]

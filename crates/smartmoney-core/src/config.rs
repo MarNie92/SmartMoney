@@ -18,6 +18,7 @@ pub const ENV_TELEGRAM_TOKEN: &str = "SMARTMONEY_TELEGRAM_BOT_TOKEN";
 pub const ENV_TELEGRAM_CHAT_IDS: &str = "SMARTMONEY_TELEGRAM_ALLOWED_CHAT_IDS";
 pub const ENV_DASHBOARD_TOKEN: &str = "SMARTMONEY_DASHBOARD_TOKEN";
 pub const ENV_DASHBOARD_BIND: &str = "SMARTMONEY_DASHBOARD_BIND";
+pub const ENV_ODDS_API_KEY: &str = "SMARTMONEY_ODDS_API_KEY";
 pub const DEFAULT_LOCAL_CONFIG: &str = "config.local.toml";
 
 #[derive(Debug, thiserror::Error)]
@@ -88,7 +89,7 @@ impl Default for CollectorConfig {
             gamma_api_url: "https://gamma-api.polymarket.com".into(),
             data_api_url: "https://data-api.polymarket.com".into(),
             clob_api_url: "https://clob.polymarket.com".into(),
-            minimum_trade_usd: 2000.0,
+            minimum_trade_usd: 1000.0,
             poll_interval_seconds: 30,
             max_requests_per_10s: 50,
             backoff_initial_ms: 500,
@@ -272,6 +273,92 @@ pub struct SimulationConfig {
     /// Strategy used for manual follows via the Telegram buttons.
     pub manual_strategy: String,
     pub strategies: Vec<StrategyConfig>,
+    pub favorites: FavoritesConfig,
+    pub anchor: AnchorSimConfig,
+}
+
+/// Forward paper test "favorites98" (ROADMAP Phase 5, pre-registered
+/// 2026-11-14): follow large favourite buys at 95-98¢ in non-deadline
+/// markets and hold to resolution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FavoritesConfig {
+    pub enabled: bool,
+    /// Minimum USDC value of the triggering trade.
+    pub min_trigger_usd: f64,
+    pub min_price: f64,
+    pub max_price: f64,
+    /// Minimum days between the trade and the market end date.
+    pub min_days_to_end: i64,
+    pub stake_usd: f64,
+    pub starting_balance_usd: f64,
+}
+
+impl Default for FavoritesConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_trigger_usd: 1000.0,
+            min_price: 0.95,
+            max_price: 0.98,
+            min_days_to_end: 7,
+            stake_usd: 100.0,
+            starting_balance_usd: 5000.0,
+        }
+    }
+}
+
+/// Forward paper test "anchor2" (ROADMAP Phase 5, pre-registered
+/// 2026-11-14): pre-kickoff divergence of secondary-league moneylines
+/// from the de-vigged sharp quote. Inactive without the API key
+/// (SMARTMONEY_ODDS_API_KEY, the-odds-api.com).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AnchorSimConfig {
+    pub enabled: bool,
+    /// Minimum |anchor - midpoint| in probability points.
+    pub threshold: f64,
+    pub window_minutes: i64,
+    pub cutoff_minutes: i64,
+    pub stake_usd: f64,
+    pub starting_balance_usd: f64,
+    pub poll_seconds: u64,
+    /// Stop calling The Odds API once this many credits were spent in a
+    /// calendar month (free tier: 500).
+    pub monthly_credit_cap: u32,
+    /// Polymarket tag slug -> The Odds API sport key.
+    pub sports: Vec<(String, String)>,
+    #[serde(skip)]
+    pub odds_api_key: Option<Secret>,
+}
+
+impl Default for AnchorSimConfig {
+    fn default() -> Self {
+        let sports = [
+            ("efl-championship", "soccer_efl_champ"),
+            ("bundesliga-2", "soccer_germany_bundesliga2"),
+            ("la-liga-2", "soccer_spain_segunda_division"),
+            ("serie-b", "soccer_italy_serie_b"),
+            ("ligue-2", "soccer_france_ligue_two"),
+            ("primeira-liga", "soccer_portugal_primeira_liga"),
+            ("scottish-premiership", "soccer_spl"),
+        ];
+        Self {
+            enabled: true,
+            threshold: 0.02,
+            window_minutes: 60,
+            cutoff_minutes: 5,
+            stake_usd: 100.0,
+            starting_balance_usd: 5000.0,
+            poll_seconds: 300,
+            monthly_credit_cap: 450,
+            sports: sports
+                .into_iter()
+                .map(|(a, b)| (a.to_owned(), b.to_owned()))
+                .collect(),
+            odds_api_key: None,
+        }
+    }
 }
 
 impl Default for SimulationConfig {
@@ -289,6 +376,8 @@ impl Default for SimulationConfig {
             execution_delay_seconds: 30,
             fee_bps: 0.0,
             manual_strategy: "manual".into(),
+            favorites: FavoritesConfig::default(),
+            anchor: AnchorSimConfig::default(),
             strategies: vec![
                 strategy("score60", 60.0),
                 strategy("score70", 70.0),
@@ -421,6 +510,9 @@ impl Config {
         if let Some(bind) = get(ENV_DASHBOARD_BIND) {
             self.dashboard.bind_address = bind.trim().to_owned();
         }
+        if let Some(key) = get(ENV_ODDS_API_KEY) {
+            self.simulation.anchor.odds_api_key = Some(Secret::new(key.trim()));
+        }
         Ok(())
     }
 
@@ -542,7 +634,7 @@ mod tests {
     fn defaults_are_valid() {
         let config = Config::default();
         config.validate().unwrap();
-        assert_eq!(config.collector.minimum_trade_usd, 2000.0);
+        assert_eq!(config.collector.minimum_trade_usd, 1000.0);
         assert_eq!(config.simulation.strategies.len(), 3);
         assert!(config.telegram.bot_token.is_none());
     }

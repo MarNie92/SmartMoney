@@ -10,7 +10,8 @@ path = "smartmoney.db"
 gamma_api_url = "https://gamma-api.polymarket.com"
 data_api_url = "https://data-api.polymarket.com"
 clob_api_url = "https://clob.polymarket.com"
-minimum_trade_usd = 2000.0
+# 1000 so the favorites98 paper strategy sees its >= $1000 triggers.
+minimum_trade_usd = 1000.0
 poll_interval_seconds = 30
 max_requests_per_10s = 50
 backoff_initial_ms = 500
@@ -98,6 +99,41 @@ stake = { mode = "percent_of_cash", value = 2.5 }
 max_stake_per_market_usd = 100.0
 max_price_move_pct = 30.0
 auto_follow = true
+
+# Forward paper test "favorites98" (pre-registered 2026-11-14): follow
+# large favourite buys at 95-98 cents in non-deadline markets, hold to
+# resolution.
+[simulation.favorites]
+enabled = true
+min_trigger_usd = 1000.0
+min_price = 0.95
+max_price = 0.98
+min_days_to_end = 7
+stake_usd = 100.0
+starting_balance_usd = 5000.0
+
+# Forward paper test "anchor2" (pre-registered 2026-11-14): pre-kickoff
+# divergence of secondary-league moneylines from the de-vigged sharp
+# quote. Needs SMARTMONEY_ODDS_API_KEY (free at the-odds-api.com);
+# inactive without it. Pairs are [polymarket tag, odds api sport key].
+[simulation.anchor]
+enabled = true
+threshold = 0.02
+window_minutes = 60
+cutoff_minutes = 5
+stake_usd = 100.0
+starting_balance_usd = 5000.0
+poll_seconds = 300
+monthly_credit_cap = 450
+sports = [
+  ["efl-championship", "soccer_efl_champ"],
+  ["bundesliga-2", "soccer_germany_bundesliga2"],
+  ["la-liga-2", "soccer_spain_segunda_division"],
+  ["serie-b", "soccer_italy_serie_b"],
+  ["ligue-2", "soccer_france_ligue_two"],
+  ["primeira-liga", "soccer_portugal_primeira_liga"],
+  ["scottish-premiership", "soccer_spl"],
+]
 
 [backtest]
 follow_delays_minutes = [0, 5, 15, 60]

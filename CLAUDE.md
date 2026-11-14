@@ -256,3 +256,15 @@ Milestones 1-3 done.
   out-of-sample ROI of the registered rule +14.4 % (101 bets, CI
   -19..+48). Secondary books are less glued but not provably soft;
   only clean next step: forward paper test with live sharp quotes.
+- Paper trading live 2026-11-14 (`smartmoney-sim`, ROADMAP Phase 5,
+  rules pre-registered before the start): engine with taker fills
+  walking the live CLOB book (fee rate(category) x p x (1-p), fills
+  below 50 % of the stake skipped), settlement via the collector's
+  resolution loop, hourly equity snapshots, dashboard page /sim.
+  Strategy favorites98 runs on the scorer event stream (collector
+  minimum_trade_usd lowered to 1000 so its triggers are seen).
+  Strategy anchor2 polls Gamma open events per secondary-league tag and
+  The Odds API (key via SMARTMONEY_ODDS_API_KEY, free tier, monthly
+  credit cap in kv_state `sim.odds_credits.<YYYY-MM>`); inactive
+  without the key. Shared fee/deadline helpers moved to
+  `smartmoney_core::fees`.

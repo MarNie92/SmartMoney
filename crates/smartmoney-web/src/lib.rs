@@ -52,6 +52,7 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(feed))
         .route("/live", get(live))
         .route("/wallet/{address}", get(wallet))
+        .route("/sim", get(sim))
         .route("/static/app.css", get(css))
         .route("/static/app.js", get(js))
         .route("/healthz", get(|| async { "ok" }))
@@ -145,6 +146,31 @@ async fn feed(State(state): State<AppState>, Query(q): Query<FeedQuery>) -> Resp
         }
         Err(e) => server_error(e),
     }
+}
+
+async fn sim(State(state): State<AppState>) -> Response {
+    let now = chrono::Utc::now().timestamp();
+    let accounts = match state.store.sim_accounts().await {
+        Ok(a) => a,
+        Err(e) => return server_error(e),
+    };
+    let mut data = Vec::new();
+    for account in accounts {
+        let positions = match state.store.sim_positions(account.id, 40).await {
+            Ok(p) => p,
+            Err(e) => return server_error(e),
+        };
+        let equity = match state.store.sim_equity(account.id, 1).await {
+            Ok(series) => series.last().map(|(_, e)| *e),
+            Err(e) => return server_error(e),
+        };
+        data.push(views::SimAccountView {
+            account,
+            positions,
+            equity,
+        });
+    }
+    Html(views::sim_page(&data, now).into_string()).into_response()
 }
 
 async fn live(State(state): State<AppState>, Query(q): Query<FeedQuery>) -> Response {
