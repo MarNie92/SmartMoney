@@ -31,6 +31,9 @@ pub enum SimEvent {
         avg_price: f64,
         cost_usd: f64,
         fee_usd: f64,
+        /// Market slugs for a public Polymarket link, when known.
+        slug: Option<String>,
+        event_slug: Option<String>,
     },
     Settled {
         strategy: String,
@@ -38,6 +41,8 @@ pub enum SimEvent {
         shares: f64,
         payout_usd: f64,
         realized_pnl: f64,
+        slug: Option<String>,
+        event_slug: Option<String>,
     },
 }
 
@@ -210,6 +215,15 @@ impl SimService {
         self
     }
 
+    /// Slugs of a stored market for public links; `(None, None)` when the
+    /// market is unknown or the lookup fails.
+    async fn market_slugs(&self, condition_id: &str) -> (Option<String>, Option<String>) {
+        match self.store.market(condition_id).await {
+            Ok(Some(m)) => (m.market.slug, m.market.event_slug),
+            _ => (None, None),
+        }
+    }
+
     async fn emit(&self, event: SimEvent) {
         if let Some(tx) = &self.events {
             let _ = tx.send(event).await;
@@ -334,6 +348,7 @@ impl SimService {
                     plan.fee_usd,
                     label.unwrap_or(condition_id)
                 );
+                let (slug, event_slug) = self.market_slugs(condition_id).await;
                 self.emit(SimEvent::Opened {
                     strategy: strategy.to_owned(),
                     label: label.unwrap_or(condition_id).to_owned(),
@@ -341,6 +356,8 @@ impl SimService {
                     avg_price: plan.avg_price,
                     cost_usd: plan.cost_usd,
                     fee_usd: plan.fee_usd,
+                    slug,
+                    event_slug,
                 })
                 .await;
                 Ok(())
@@ -399,6 +416,8 @@ impl SimService {
                 shares: p.shares,
                 payout_usd: payout,
                 realized_pnl: realized,
+                slug: market.market.slug.clone(),
+                event_slug: market.market.event_slug.clone(),
             })
             .await;
         }
