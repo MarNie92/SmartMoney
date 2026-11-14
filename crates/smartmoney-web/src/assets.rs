@@ -151,6 +151,15 @@ table.pos { width: 100%; border-collapse: collapse; font-size: 14px; }
 table.pos th { text-align: left; font-weight: 600; color: var(--muted); padding: 6px 4px; border-bottom: 1px solid var(--line); }
 table.pos td { padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
 table.pos .num { text-align: right; white-space: nowrap; }
+table.sim { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.sim th { text-align: left; font-weight: 600; color: var(--muted); padding: 6px 4px; border-bottom: 1px solid var(--line); }
+table.sim td { padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.sim .num { text-align: right; white-space: nowrap; }
+table.sim td.title { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sim-account { margin-top: 22px; }
+.pnl { font-weight: 600; color: var(--ok, #2e7d32); }
+.pnl.neg { color: var(--bad, #c62828); }
+.muted { color: var(--muted); }
 
 .login { max-width: 360px; margin: 18vh auto 0; padding: 0 16px; }
 .login input { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }

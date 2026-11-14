@@ -62,6 +62,8 @@ mod tests {
         assert!(is_deadline_question("Will X resign by March 31?"));
         assert!(is_deadline_question("Will Y happen before 2027?"));
         assert!(!is_deadline_question("Will the Lakers win tonight?"));
-        assert!(!is_deadline_question("Highest temperature in NYC on May 1?"));
+        assert!(!is_deadline_question(
+            "Highest temperature in NYC on May 1?"
+        ));
     }
 }

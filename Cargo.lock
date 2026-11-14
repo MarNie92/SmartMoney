@@ -1984,10 +1984,12 @@ name = "smartmoney-daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "dotenvy",
  "smartmoney-collector",
  "smartmoney-core",
  "smartmoney-scorer",
+ "smartmoney-sim",
  "smartmoney-store",
  "smartmoney-web",
  "tokio",

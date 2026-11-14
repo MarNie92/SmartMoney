@@ -222,8 +222,18 @@ mod tests {
             "Queens Park Rangers",
             "2026-11-14T15:00:00Z",
             vec![
-                h2h("bet365", "Sheffield Wednesday", "Queens Park Rangers", [1.5, 4.0, 8.0]),
-                h2h("pinnacle", "Sheffield Wednesday", "Queens Park Rangers", [2.0, 4.0, 4.0]),
+                h2h(
+                    "bet365",
+                    "Sheffield Wednesday",
+                    "Queens Park Rangers",
+                    [1.5, 4.0, 8.0],
+                ),
+                h2h(
+                    "pinnacle",
+                    "Sheffield Wednesday",
+                    "Queens Park Rangers",
+                    [2.0, 4.0, 4.0],
+                ),
             ],
         );
         let p = anchor_probs(&ev, true).unwrap();
@@ -241,7 +251,11 @@ mod tests {
             "H",
             "A",
             "2026-11-14T15:00:00Z",
-            vec![mk([2.0, 4.0, 4.0]), mk([2.2, 4.0, 3.6]), mk([2.1, 4.0, 3.8])],
+            vec![
+                mk([2.0, 4.0, 4.0]),
+                mk([2.2, 4.0, 3.6]),
+                mk([2.1, 4.0, 3.8]),
+            ],
         );
         let p = anchor_probs(&ev, true).unwrap();
         assert!((p.iter().sum::<f64>() - 1.0).abs() < 1e-12);
@@ -254,8 +268,18 @@ mod tests {
             .unwrap()
             .timestamp();
         let events = vec![
-            event("Sheffield Wednesday", "Hull City", "2026-11-14T15:00:00Z", vec![]),
-            event("Sheffield United", "Queens Park Rangers", "2026-11-14T15:00:00Z", vec![]),
+            event(
+                "Sheffield Wednesday",
+                "Hull City",
+                "2026-11-14T15:00:00Z",
+                vec![],
+            ),
+            event(
+                "Sheffield United",
+                "Queens Park Rangers",
+                "2026-11-14T15:00:00Z",
+                vec![],
+            ),
             event("Hearts", "Celtic", "2026-11-14T19:00:00Z", vec![]),
         ];
         let (ev, a_home) = match_event("Hull City", "Sheffield Wednesday", ko, &events).unwrap();

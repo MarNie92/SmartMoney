@@ -117,14 +117,13 @@ impl Store {
     /// negative.
     pub async fn open_sim_position(&self, p: &NewSimPosition) -> Result<i64> {
         let mut tx = self.pool().begin().await?;
-        let updated = sqlx::query(
-            "UPDATE sim_accounts SET cash = cash - ? WHERE id = ? AND cash >= ?",
-        )
-        .bind(p.cost_usd)
-        .bind(p.account_id)
-        .bind(p.cost_usd)
-        .execute(&mut *tx)
-        .await?;
+        let updated =
+            sqlx::query("UPDATE sim_accounts SET cash = cash - ? WHERE id = ? AND cash >= ?")
+                .bind(p.cost_usd)
+                .bind(p.account_id)
+                .bind(p.cost_usd)
+                .execute(&mut *tx)
+                .await?;
         if updated.rows_affected() == 0 {
             return Err(crate::StoreError::Constraint(
                 "insufficient simulated cash".into(),
@@ -330,7 +329,10 @@ mod tests {
         assert_eq!(rows[0].status, "settled");
         assert!((rows[0].realized_pnl.unwrap() - 4.0).abs() < 1e-9);
         // Settling twice changes nothing.
-        store.settle_sim_position(id, 103.0, 4.0, 1000).await.unwrap();
+        store
+            .settle_sim_position(id, 103.0, 4.0, 1000)
+            .await
+            .unwrap();
         let after = store.sim_accounts().await.unwrap();
         assert!((after[0].cash - 5004.0).abs() < 1e-9);
 

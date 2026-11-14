@@ -104,7 +104,12 @@ mod tests {
         let t = trade();
         let far = 1_000_000 + 8 * 86_400;
         assert_eq!(
-            should_follow(&t, &market("Will the Lakers win the title?", far), &cfg, t.timestamp + 60),
+            should_follow(
+                &t,
+                &market("Will the Lakers win the title?", far),
+                &cfg,
+                t.timestamp + 60
+            ),
             Ok(())
         );
         // Each rule rejects.
@@ -124,7 +129,12 @@ mod tests {
             Err("outside price band")
         );
         assert_eq!(
-            should_follow(&t, &market("Will X resign by March 31?", far), &cfg, t.timestamp),
+            should_follow(
+                &t,
+                &market("Will X resign by March 31?", far),
+                &cfg,
+                t.timestamp
+            ),
             Err("deadline market")
         );
         assert_eq!(

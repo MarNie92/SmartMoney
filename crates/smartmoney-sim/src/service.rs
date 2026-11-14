@@ -135,7 +135,12 @@ impl SimService {
             let json = serde_json::to_string(&cfg.favorites)?;
             Some(
                 store
-                    .ensure_sim_account("favorites98", &json, cfg.favorites.starting_balance_usd, now)
+                    .ensure_sim_account(
+                        "favorites98",
+                        &json,
+                        cfg.favorites.starting_balance_usd,
+                        now,
+                    )
                     .await?
                     .id,
             )
@@ -428,7 +433,11 @@ impl SimService {
             for u in upcoming {
                 let mut open_slots = Vec::new();
                 for (i, m) in u.markets.iter().enumerate() {
-                    if !self.store.has_sim_position(account, &m.condition_id).await? {
+                    if !self
+                        .store
+                        .has_sim_position(account, &m.condition_id)
+                        .await?
+                    {
                         open_slots.push(i);
                     }
                 }
@@ -441,7 +450,11 @@ impl SimService {
             }
             let (credit_key, used) = self.odds_credits().await?;
             if used >= a.monthly_credit_cap {
-                tracing::warn!(used, cap = a.monthly_credit_cap, "odds api budget exhausted");
+                tracing::warn!(
+                    used,
+                    cap = a.monthly_credit_cap,
+                    "odds api budget exhausted"
+                );
                 return Ok(());
             }
             let odds = match self.fetch_odds(sport).await {
@@ -455,9 +468,7 @@ impl SimService {
                 .set_state(&credit_key, &(used + 1).to_string(), now)
                 .await?;
             for (u, open_slots) in pending {
-                let Some((ev, a_home)) =
-                    match_event(&u.team_a, &u.team_b, u.kickoff, &odds)
-                else {
+                let Some((ev, a_home)) = match_event(&u.team_a, &u.team_b, u.kickoff, &odds) else {
                     tracing::info!(
                         "anchor2: kein Quoten-Gegenstück für {} vs. {}",
                         u.team_a,
@@ -575,7 +586,10 @@ mod tests {
         let mut event = event;
         event.markets = vec![
             gamma_market("Will Hull City win on 2026-11-14?", "0xa"),
-            gamma_market("Will Hull City vs. Sheffield Wednesday end in a draw?", "0xd"),
+            gamma_market(
+                "Will Hull City vs. Sheffield Wednesday end in a draw?",
+                "0xd",
+            ),
             gamma_market("Will Sheffield Wednesday win on 2026-11-14?", "0xb"),
         ];
         let events = vec![event];
