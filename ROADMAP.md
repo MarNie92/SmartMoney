@@ -291,7 +291,8 @@ that strategy. SmartMoney stays read-only: simulated fills only.
 - [x] Strategy `favorites98` (live since 2026-11-14) (pre-registered): trigger = stored BUY
       trade >= $1000 at 95.0-98.0¢ whose market question is not a
       deadline pattern (status-quo matcher) and whose end date is
-      >= 7 days away; paper-buy the same token with $100, at most one
+      7 to 90 days away (the maximum was added 2026-11-15, see the
+      sanity check below); paper-buy the same token with $100, at most one
       position per market; hold to resolution. Evaluation after >= 100
       settled positions or on 2027-02-06, whichever comes first:
       PASS = ROI after fees > 0 with >= 100 settled positions; tail
@@ -319,11 +320,23 @@ that strategy. SmartMoney stays read-only: simulated fills only.
       about 4 bets a week, which matches the 2 observed on the first
       match day; the >= 150 bet target will therefore not be reached
       before the 2027-02-06 backstop (expect roughly 45).
-- [ ] Open design question: favorites98 has a minimum horizon (>= 7
-      days) but no maximum, and live entries run 16 to 412 days. Very
-      long-dated positions tie up the test without ever settling before
-      the evaluation date. Adding a maximum would change the
-      pre-registered rule, so it needs an explicit decision.
+- [x] Rule change 2026-11-15, decided explicitly: favorites98 gains a
+      maximum horizon of 90 days. Live entries ran 16 to 412 days, and
+      anything beyond about three months cannot settle before the
+      evaluation date, so it would tie up the test without ever
+      contributing a result. The 30 positions opened under the old rule
+      are kept as a warm-up run (account `favorites98-warmup`); they
+      settle and report under that name but are excluded from the
+      criterion. The count for the pre-registered evaluation starts
+      from zero on 2026-11-15 with a fresh `favorites98` account.
+      Nothing had settled yet, so no result was discarded.
+- Known deviation, deliberately not fixed: the deadline matcher only
+      fires on questions starting with "Will ", so statements like
+      "Zelenskyy out as Ukraine president by end of 2026?" pass as
+      non-deadline markets. The Phase 1c status-quo backtest used the
+      same matcher, so the forward test stays comparable with the
+      backtest it is meant to confirm; tightening it now would break
+      that comparison.
 
 ## Phase 6: Full dashboard (milestone 7)
 

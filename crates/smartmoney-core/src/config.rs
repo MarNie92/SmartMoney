@@ -290,6 +290,9 @@ pub struct FavoritesConfig {
     pub max_price: f64,
     /// Minimum days between the trade and the market end date.
     pub min_days_to_end: i64,
+    /// Maximum days to the end date. Longer markets tie the test up
+    /// without ever settling before it is evaluated.
+    pub max_days_to_end: i64,
     pub stake_usd: f64,
     pub starting_balance_usd: f64,
 }
@@ -302,6 +305,7 @@ impl Default for FavoritesConfig {
             min_price: 0.95,
             max_price: 0.98,
             min_days_to_end: 7,
+            max_days_to_end: 90,
             stake_usd: 100.0,
             // Paper money must never be the binding constraint: running
             // out of cash would silently drop signals and truncate the

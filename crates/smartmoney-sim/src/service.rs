@@ -187,13 +187,14 @@ impl SimService {
         } else {
             None
         };
-        let mut strategies = HashMap::new();
-        if let Some(id) = favorites_account {
-            strategies.insert(id, "favorites98".to_owned());
-        }
-        if let Some(id) = anchor_account {
-            strategies.insert(id, "anchor2".to_owned());
-        }
+        // Every account, so positions of retired strategies (a warm-up
+        // run, say) still settle under their own name.
+        let strategies = store
+            .sim_accounts()
+            .await?
+            .into_iter()
+            .map(|a| (a.id, a.strategy))
+            .collect();
         Ok(Self {
             store,
             client,
