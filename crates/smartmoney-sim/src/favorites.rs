@@ -36,6 +36,9 @@ pub fn should_follow(
     if end - trade.timestamp < cfg.min_days_to_end * 86_400 {
         return Err("ends too soon");
     }
+    if end - trade.timestamp > cfg.max_days_to_end * 86_400 {
+        return Err("ends too late");
+    }
     if now - trade.timestamp > 3600 {
         return Err("trigger too old");
     }
@@ -140,6 +143,26 @@ mod tests {
         assert_eq!(
             should_follow(&t, &market("x", 1_000_000 + 3 * 86_400), &cfg, t.timestamp),
             Err("ends too soon")
+        );
+        // Long-dated markets would never settle before the evaluation.
+        assert_eq!(
+            should_follow(
+                &t,
+                &market("x", 1_000_000 + 200 * 86_400),
+                &cfg,
+                t.timestamp
+            ),
+            Err("ends too late")
+        );
+        assert_eq!(
+            should_follow(
+                &t,
+                &market("x", 1_000_000 + 89 * 86_400),
+                &cfg,
+                t.timestamp + 60
+            ),
+            Ok(()),
+            "just inside the 90 day limit"
         );
         let mut resolved = market("x", far);
         resolved.payouts = Some(vec![1.0, 0.0]);

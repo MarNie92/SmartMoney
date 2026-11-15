@@ -109,6 +109,8 @@ min_trigger_usd = 1000.0
 min_price = 0.95
 max_price = 0.98
 min_days_to_end = 7
+# Longer markets would never settle before the test is evaluated.
+max_days_to_end = 90
 stake_usd = 100.0
 # Paper money must never be the binding constraint: an empty account
 # would silently drop signals and truncate the sample by arrival order.
