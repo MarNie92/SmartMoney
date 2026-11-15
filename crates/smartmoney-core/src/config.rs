@@ -303,7 +303,10 @@ impl Default for FavoritesConfig {
             max_price: 0.98,
             min_days_to_end: 7,
             stake_usd: 100.0,
-            starting_balance_usd: 5000.0,
+            // Paper money must never be the binding constraint: running
+            // out of cash would silently drop signals and truncate the
+            // sample by arrival order rather than by the rule.
+            starting_balance_usd: 50_000.0,
         }
     }
 }
