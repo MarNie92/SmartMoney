@@ -114,7 +114,9 @@ max_days_to_end = 90
 stake_usd = 100.0
 # Paper money must never be the binding constraint: an empty account
 # would silently drop signals and truncate the sample by arrival order.
-starting_balance_usd = 50000.0
+# About 15 entries a day held ~27 days means ~400 open positions, so
+# this leaves roughly three times the expected peak.
+starting_balance_usd = 150000.0
 
 # Forward paper test "anchor2" (pre-registered 2026-11-14): pre-kickoff
 # divergence of secondary-league moneylines from the de-vigged sharp

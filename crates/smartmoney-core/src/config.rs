@@ -310,7 +310,7 @@ impl Default for FavoritesConfig {
             // Paper money must never be the binding constraint: running
             // out of cash would silently drop signals and truncate the
             // sample by arrival order rather than by the rule.
-            starting_balance_usd: 50_000.0,
+            starting_balance_usd: 150_000.0,
         }
     }
 }
