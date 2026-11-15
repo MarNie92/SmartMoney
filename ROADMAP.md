@@ -308,6 +308,22 @@ that strategy. SmartMoney stays read-only: simulated fills only.
 - [x] Dashboard page /sim (accounts, positions, equity); still open: P&L, hit rate, edge vs entry price, drawdown per
       strategy; score-based strategies (insider/mirror) reuse the same
       engine later.
+- Sanity check 2026-11-15, day 2 (no rule change): favorites98 opened
+      15-19 positions a day in 30 distinct markets, so the original
+      $5,000 paper balance would have been spent within two days and
+      every later signal silently dropped, truncating the sample by
+      arrival order instead of by the rule. The balance is now $50,000
+      so cash never binds; stake, entry rule and evaluation criterion
+      are unchanged. anchor2's lower rate is by design: 45 matches a
+      week x 3 outcomes x the 2.8 % divergence rate from Phase 1g-b is
+      about 4 bets a week, which matches the 2 observed on the first
+      match day; the >= 150 bet target will therefore not be reached
+      before the 2027-02-06 backstop (expect roughly 45).
+- [ ] Open design question: favorites98 has a minimum horizon (>= 7
+      days) but no maximum, and live entries run 16 to 412 days. Very
+      long-dated positions tie up the test without ever settling before
+      the evaluation date. Adding a maximum would change the
+      pre-registered rule, so it needs an explicit decision.
 
 ## Phase 6: Full dashboard (milestone 7)
 
