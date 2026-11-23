@@ -309,6 +309,16 @@ that strategy. SmartMoney stays read-only: simulated fills only.
 - [x] Dashboard page /sim (accounts, positions, equity); still open: P&L, hit rate, edge vs entry price, drawdown per
       strategy; score-based strategies (insider/mirror) reuse the same
       engine later.
+- [x] anchor2 retired 2026-11-23 after the de-vig test (Phase 1g-c):
+      live result -25.9 % over 24 settled bets, all of it in longshots
+      (under 40c: 1 win in 13). Power and Shin de-vigging were added and
+      replayed on the cached Phase 1g-b sample to test whether the
+      proportional method was the cause. They do shift bets away from
+      longshots (38 -> 11 and 13 under 25c) but leave accuracy
+      unchanged: all three give a Brier advantage of -0.0001 over 4886
+      observations with CIs spanning zero. Half-2 returns of +12 / +19 /
+      +45 % rest on 97 / 52 / 46 bets and every CI includes zero. The
+      strategy is disabled by default; its open positions still settle.
 - Sanity check 2026-11-15, day 2 (no rule change): favorites98 opened
       15-19 positions a day in 30 distinct markets, so the original
       $5,000 paper balance would have been spent within two days and

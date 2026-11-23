@@ -318,6 +318,7 @@ pub async fn load(
                     kickoff: c.kickoff,
                     date,
                     anchor: anchor_p,
+                    odds: p.row.odds,
                     source: p.row.source,
                     condition_ids: cid,
                     payout: pay,

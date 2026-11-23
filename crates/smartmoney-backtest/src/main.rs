@@ -1418,8 +1418,120 @@ async fn main() -> anyhow::Result<()> {
             if mm_rate > 2.0 {
                 println!("ABBRUCH laut Kriterium: zu viele Wahrheits-Widersprüche; zuerst den Join prüfen.");
             }
+            // Compare the de-vig methods: the margin is not spread evenly
+            // across outcomes, so how it is removed decides which side a
+            // divergence points at.
+            println!("\nEntvig-Verfahren im Vergleich (Vorteil > 0 = Anker genauer als der Markt)");
+            let header = format!(
+                "{:<14} {:>8} {:>10} {:>10} {:>20} {:>8} {:>10}",
+                "Verfahren",
+                "Spannen",
+                "Brier Ank",
+                "Brier Mkt",
+                "Vorteil (95 %)",
+                "Wetten",
+                "Rendite H2"
+            );
+            println!("{header}");
+            println!("{}", "-".repeat(header.chars().count()));
+            let mut per_method = Vec::new();
+            for method in anchor::Devig::ALL {
+                let o = anchor::observations_with(&data.matches, &data.prices, method);
+                let c = weather::compare(&o);
+                let crit = weather_v2::criterion(
+                    &o,
+                    true,
+                    &[0.02, 0.03, 0.05, 0.08, 0.10],
+                    30,
+                    0.05,
+                    cfg.backtest.slippage_bps,
+                );
+                let h2 = crit.half2_result.as_ref();
+                println!(
+                    "{:<14} {:>8} {:>10} {:>10} {:>20} {:>8} {:>10}",
+                    method.label(),
+                    o.len(),
+                    c.as_ref()
+                        .map_or("-".into(), |c| format!("{:.4}", c.brier_model)),
+                    c.as_ref()
+                        .map_or("-".into(), |c| format!("{:.4}", c.brier_market)),
+                    c.as_ref().map_or("-".into(), |c| format!(
+                        "{:+.4} ({:+.4}..{:+.4})",
+                        c.advantage, c.advantage_lo, c.advantage_hi
+                    )),
+                    h2.map_or("-".into(), |r| r.bets.to_string()),
+                    h2.map_or("-".into(), |r| format!(
+                        "{:+.0}% ({:+.0}..{:+.0})",
+                        r.roi_taker * 100.0,
+                        r.roi_taker_lo * 100.0,
+                        r.roi_taker_hi * 100.0
+                    )),
+                );
+                per_method.push((method, o, crit));
+            }
+
+            // Where do the bets land? The live anchor2 run lost all of its
+            // money on longshots, so check the same split here.
+            println!("\nWetten der 2-Punkte-Regel nach Einstiegskurs (alle Daten)");
+            let bands: [(&str, f64, f64); 4] = [
+                ("unter 25c", 0.0, 0.25),
+                ("25-40c", 0.25, 0.40),
+                ("40-55c", 0.40, 0.55),
+                ("ueber 55c", 0.55, 1.01),
+            ];
+            let bh = format!(
+                "{:<14} {:<12} {:>7} {:>10} {:>12} {:>10}",
+                "Verfahren", "Kursband", "Wetten", "Ø Kurs", "Trefferquote", "Rendite"
+            );
+            println!("{bh}");
+            println!("{}", "-".repeat(bh.chars().count()));
+            for (method, o, _) in &per_method {
+                for (label, lo, hi) in bands {
+                    // One bet per outcome whose anchor exceeds the market
+                    // by 2 points, priced at the market.
+                    let bets: Vec<(f64, f64)> = o
+                        .iter()
+                        .filter_map(|x| {
+                            let (price, payout) = if x.model - x.market >= 0.02 {
+                                (x.market, x.outcome)
+                            } else if x.market - x.model >= 0.02 {
+                                (1.0 - x.market, 1.0 - x.outcome)
+                            } else {
+                                return None;
+                            };
+                            (price >= lo && price < hi && (0.02..=0.98).contains(&price))
+                                .then_some((price, payout))
+                        })
+                        .collect();
+                    if bets.is_empty() {
+                        continue;
+                    }
+                    let n = bets.len() as f64;
+                    let avg_price = bets.iter().map(|(p, _)| p).sum::<f64>() / n;
+                    let hits = bets.iter().filter(|(_, y)| *y >= 0.999).count();
+                    // Taker return with fee and slippage, as in the criterion.
+                    let roi = bets
+                        .iter()
+                        .map(|(p, y)| {
+                            let q = (p * (1.0 + cfg.backtest.slippage_bps / 10_000.0)).min(0.999);
+                            y / (q + 0.05 * q * (1.0 - q)) - 1.0
+                        })
+                        .sum::<f64>()
+                        / n;
+                    println!(
+                        "{:<14} {:<12} {:>7} {:>10.3} {:>11.1} % {:>9.1} %",
+                        method.label(),
+                        label,
+                        bets.len(),
+                        avg_price,
+                        100.0 * hits as f64 / n,
+                        100.0 * roi,
+                    );
+                }
+            }
+
             let obs = anchor::observations(&data.matches, &data.prices);
-            println!("\nJe Liga (informativ): Brier Anker vs. Markt, Vorteil > 0 = Anker genauer");
+            println!("\nJe Liga (informativ, proportional): Brier Anker vs. Markt, Vorteil > 0 = Anker genauer");
             for (slug, _) in leagues.iter().copied() {
                 let sub: Vec<weather::Observation> =
                     obs.iter().filter(|o| o.station == slug).cloned().collect();
