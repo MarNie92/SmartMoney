@@ -153,7 +153,9 @@ pub fn legend(w: &ScoreWeights) -> Markup {
 }
 
 pub fn row(s: &ScoredTrade, w: &ScoreWeights, threshold: f64, now: i64) -> Markup {
-    let alert = s.total >= threshold;
+    // Same rule the bot alerts on, so the dashboard and Telegram agree.
+    let alert = s.total >= threshold
+        && smartmoney_scorer::has_insider_marker(s.price_asymmetry, s.cluster_bonus);
     let mid = !alert && s.total >= threshold * 0.66;
     let segs = segments(s, w);
     let details: serde_json::Value = serde_json::from_str(&s.details_json).unwrap_or_default();

@@ -6,4 +6,6 @@ pub mod model;
 pub mod service;
 
 pub use model::{score, ScoreBreakdown, ScoreInput, TradeFacts, SCORER_VERSION};
-pub use service::{effective_threshold, Scorer, ScorerEvent, STATE_ALERT_THRESHOLD};
+pub use service::{
+    effective_threshold, has_insider_marker, is_alert, Scorer, ScorerEvent, STATE_ALERT_THRESHOLD,
+};

@@ -21,6 +21,9 @@ enrich_cache_minutes = 60
 
 [scoring]
 alert_threshold = 60.0
+# An alert also needs a longshot price or a wallet cluster; freshness,
+# size and category alone already reach the threshold.
+alert_requires_marker = true
 # "additive": all components are summed (market type is one of them).
 # "multiplicative": the other components form a 0-100 base that is multiplied
 # by the category factor; concentration only counts for wallets with history.
