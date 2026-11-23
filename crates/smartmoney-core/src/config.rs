@@ -319,6 +319,12 @@ impl Default for FavoritesConfig {
 /// 2026-11-14): pre-kickoff divergence of secondary-league moneylines
 /// from the de-vigged sharp quote. Inactive without the API key
 /// (SMARTMONEY_ODDS_API_KEY, the-odds-api.com).
+///
+/// Retired 2026-11-23: the anchor is no more accurate than the
+/// Polymarket price under any de-vig method (proportional, power and
+/// Shin all land at a Brier advantage of -0.0001 over 4886
+/// observations), and the live run lost 25.9 % over 24 settled bets.
+/// Disabled by default; the config is kept so the run can be repeated.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AnchorSimConfig {
@@ -351,7 +357,8 @@ impl Default for AnchorSimConfig {
             ("scottish-premiership", "soccer_spl"),
         ];
         Self {
-            enabled: true,
+            // Retired 2026-11-23, see the type docs.
+            enabled: false,
             threshold: 0.02,
             window_minutes: 60,
             cutoff_minutes: 5,

@@ -100,6 +100,27 @@ scores; the backfill only scores trades that have no score row, so a
 version bump deliberately does not rescore (that would re-alert
 history over Telegram).
 
+## De-vig test and anchor2 retirement (2026-11-23)
+
+The live anchor2 run lost 25.9 % over 24 settled bets, with every
+losing dollar in longshots (under 40c: 1 win in 13). Hypothesis: the
+proportional de-vig spreads the bookmaker margin evenly although it
+sits mostly on longshots, so the anchor overstates them and pushes us
+to buy exactly the side Polymarket already overprices (see the
+calibration test). Tested by adding power and Shin de-vigging
+(`anchor::Devig`, bisection solvers, `observations_with`) and
+replaying the cached Phase 1g-b sample.
+
+Result: the mechanism is real but the cure is not. Power and Shin do
+move bets away from longshots (38 -> 11 and 13 bets under 25c), yet
+all three methods give a Brier advantage of -0.0001 over the same 4886
+observations, with CIs spanning zero. The half-2 strategy returns look
+good (+12 / +19 / +45 %) but rest on 97 / 52 / 46 bets and every CI
+includes zero; the accuracy test is far more powerful and says there
+is nothing. Per the agreement made before the test, anchor2 is
+retired: `AnchorSimConfig::enabled` defaults to false. Its two open
+positions still settle through the normal resolution loop.
+
 ## Deployment (live since 2026-11-14)
 
 Runs on an Oracle Cloud Always Free VM (Ampere A1, 4 OCPU / 24 GB,

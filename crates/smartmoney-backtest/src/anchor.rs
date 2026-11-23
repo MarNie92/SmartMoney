@@ -5,6 +5,7 @@
 
 use crate::weather::{Kind, Observation};
 use chrono::NaiveDate;
+use serde::Serialize;
 use std::collections::{BTreeSet, HashMap};
 
 /// (Polymarket tag slug, football-data.co.uk division code).
@@ -126,13 +127,92 @@ pub fn parse_odds_csv(text: &str, league: &str) -> Vec<OddsRow> {
 }
 
 /// Remove the bookmaker margin proportionally.
+/// How the bookmaker margin is removed from the quoted odds. The
+/// methods differ in where they assume the margin sits, which matters
+/// because it is not spread evenly: bookmakers load more of it onto
+/// longshots (the favourite-longshot bias).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum Devig {
+    /// Margin spread evenly across outcomes. Simplest, and the method
+    /// the first anchor backtest and the live anchor2 run used.
+    Proportional,
+    /// Raise every implied probability to a common power chosen so they
+    /// sum to one. Takes proportionally more off longshots.
+    Power,
+    /// Shin's model: the margin covers trading against better-informed
+    /// bettors, which shrinks longshots the most.
+    Shin,
+}
+
+impl Devig {
+    pub fn label(self) -> &'static str {
+        match self {
+            Devig::Proportional => "proportional",
+            Devig::Power => "power",
+            Devig::Shin => "shin",
+        }
+    }
+
+    pub const ALL: [Devig; 3] = [Devig::Proportional, Devig::Power, Devig::Shin];
+}
+
+/// Proportional de-vigging (kept as the default for compatibility).
 pub fn devig(odds: [f64; 3]) -> Option<[f64; 3]> {
-    if odds.iter().any(|o| *o <= 1.0) {
+    devig_with(odds, Devig::Proportional)
+}
+
+fn normalize(p: [f64; 3]) -> [f64; 3] {
+    let sum: f64 = p.iter().sum();
+    [p[0] / sum, p[1] / sum, p[2] / sum]
+}
+
+/// Bisection on a monotone decreasing function `f`, returning the
+/// argument where it crosses zero.
+fn solve(mut lo: f64, mut hi: f64, f: impl Fn(f64) -> f64) -> f64 {
+    for _ in 0..80 {
+        let mid = 0.5 * (lo + hi);
+        if f(mid) > 0.0 {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
+}
+
+pub fn devig_with(odds: [f64; 3], method: Devig) -> Option<[f64; 3]> {
+    if !odds.iter().all(|o| o.is_finite() && *o > 1.0) {
         return None;
     }
-    let inv: Vec<f64> = odds.iter().map(|o| 1.0 / o).collect();
-    let sum: f64 = inv.iter().sum();
-    Some([inv[0] / sum, inv[1] / sum, inv[2] / sum])
+    let inv = [1.0 / odds[0], 1.0 / odds[1], 1.0 / odds[2]];
+    let booksum: f64 = inv.iter().sum();
+    if booksum <= 1.0 {
+        // No margin to remove (or an arbitrage); normalising is all we can do.
+        return Some(normalize(inv));
+    }
+    let p = match method {
+        Devig::Proportional => normalize(inv),
+        Devig::Power => {
+            // Sum of inv^k falls as k grows, from booksum > 1 toward 0.
+            let k = solve(1.0, 20.0, |k| {
+                inv.iter().map(|v| v.powf(k)).sum::<f64>() - 1.0
+            });
+            normalize([inv[0].powf(k), inv[1].powf(k), inv[2].powf(k)])
+        }
+        Devig::Shin => {
+            let shin = |z: f64| -> [f64; 3] {
+                inv.map(|pi| {
+                    let root = (z * z + 4.0 * (1.0 - z) * pi * pi / booksum).sqrt();
+                    (root - z) / (2.0 * (1.0 - z))
+                })
+            };
+            // At z = 0 the probabilities sum to sqrt(booksum) > 1 and the
+            // sum falls as z grows.
+            let z = solve(0.0, 0.999, |z| shin(z).iter().sum::<f64>() - 1.0);
+            normalize(shin(z))
+        }
+    };
+    p.iter().all(|v| v.is_finite() && *v > 0.0).then_some(p)
 }
 
 /// Full-name aliases applied after normalisation (both sides).
@@ -394,8 +474,11 @@ pub struct MatchRow {
     pub league: String,
     pub kickoff: i64,
     pub date: NaiveDate,
-    /// De-vigged anchor probabilities.
+    /// De-vigged anchor probabilities (proportional, for compatibility).
     pub anchor: [f64; 3],
+    /// The quoted closing odds, so other de-vig methods can be compared
+    /// without reloading.
+    pub odds: [f64; 3],
     pub source: &'static str,
     pub condition_ids: [String; 3],
     /// Resolved YES payout per outcome market.
@@ -427,8 +510,20 @@ pub const OUTCOME_LABELS: [&str; 3] = ["home", "draw", "away"];
 
 /// One observation per outcome market with a fresh pre-kickoff price.
 pub fn observations(matches: &[MatchRow], prices: &HashMap<String, f64>) -> Vec<Observation> {
+    observations_with(matches, prices, Devig::Proportional)
+}
+
+/// Observations with the anchor computed by .
+pub fn observations_with(
+    matches: &[MatchRow],
+    prices: &HashMap<String, f64>,
+    method: Devig,
+) -> Vec<Observation> {
     let mut out = Vec::new();
     for m in matches {
+        let Some(anchor) = devig_with(m.odds, method) else {
+            continue;
+        };
         for (i, label) in OUTCOME_LABELS.iter().enumerate() {
             let Some(p) = prices.get(&m.condition_ids[i]) else {
                 continue;
@@ -439,7 +534,7 @@ pub fn observations(matches: &[MatchRow], prices: &HashMap<String, f64>) -> Vec<
                 station: m.league.clone(),
                 date: m.date,
                 label: (*label).to_owned(),
-                model: m.anchor[i],
+                model: anchor[i],
                 market: *p,
                 outcome: m.payout[i],
             });
@@ -477,6 +572,50 @@ mod tests {
         assert!((p.iter().sum::<f64>() - 1.0).abs() < 1e-12);
         assert!((p[0] - 0.5).abs() < 1e-12);
         assert_eq!(devig([1.0, 4.0, 4.0]), None);
+    }
+
+    #[test]
+    fn devig_methods_shrink_longshots_more_than_favourites() {
+        // A typical book with a clear favourite, a draw and a longshot;
+        // the quoted probabilities sum to well over 1.
+        let odds = [1.40, 4.00, 7.00];
+        let booksum: f64 = odds.iter().map(|o| 1.0 / o).sum();
+        assert!(booksum > 1.05, "test book needs a real margin: {booksum}");
+
+        let prop = devig_with(odds, Devig::Proportional).unwrap();
+        let power = devig_with(odds, Devig::Power).unwrap();
+        let shin = devig_with(odds, Devig::Shin).unwrap();
+        for p in [prop, power, shin] {
+            assert!((p.iter().sum::<f64>() - 1.0).abs() < 1e-9, "{p:?}");
+            assert!(p.iter().all(|v| *v > 0.0 && *v < 1.0), "{p:?}");
+        }
+        // Both alternatives take more off the longshot and leave the
+        // favourite higher. That is the whole point of using them.
+        assert!(
+            power[2] < prop[2],
+            "power longshot {} vs {}",
+            power[2],
+            prop[2]
+        );
+        assert!(
+            shin[2] < prop[2],
+            "shin longshot {} vs {}",
+            shin[2],
+            prop[2]
+        );
+        assert!(power[0] > prop[0], "power favourite");
+        assert!(shin[0] > prop[0], "shin favourite");
+
+        // A book with no margin is just normalised, whatever the method.
+        let fair = [3.0, 3.0, 3.0];
+        for m in Devig::ALL {
+            let p = devig_with(fair, m).unwrap();
+            assert!((p[0] - 1.0 / 3.0).abs() < 1e-9, "{m:?} {p:?}");
+        }
+        for m in Devig::ALL {
+            assert_eq!(devig_with([1.0, 4.0, 4.0], m), None);
+            assert_eq!(devig_with([f64::NAN, 4.0, 4.0], m), None);
+        }
     }
 
     fn j(a: &str, b: &str, rows: &[PreparedOdds]) -> Join<'static> {
@@ -589,6 +728,7 @@ mod tests {
             kickoff: 1_700_000_000,
             date: NaiveDate::from_ymd_opt(2026, 11, 8).unwrap(),
             anchor: [0.5, 0.3, 0.2],
+            odds: [2.0, 10.0 / 3.0, 5.0],
             source: "Pinnacle",
             condition_ids: ["h".into(), "d".into(), "a".into()],
             payout,
