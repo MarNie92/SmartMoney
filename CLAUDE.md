@@ -114,9 +114,9 @@ The real defect is the same arithmetic as before: wallet freshness
 threshold of 60, so three weak signals reach the bar on their own.
 Fix: an alert additionally needs a longshot price or a wallet cluster,
 the two components that encode "somebody may know something" rather
-than "something is unusual".  and
-, switchable via
-, applied by the daemon, the
+than "something is unusual". `scorer::is_alert` and
+`has_insider_marker`, switchable via
+`ScoringConfig::alert_requires_marker`, applied by the daemon, the
 scorer log and the dashboard so all three agree. On the live sample
 this cuts 120 alerts over 8 days to 43 (about 5 a day). No schema
 change: the components were already stored.
