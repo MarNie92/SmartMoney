@@ -6,7 +6,7 @@
 use anyhow::Context;
 use smartmoney_collector::{Collector, CollectorEvent, PolymarketClient};
 use smartmoney_core::Config;
-use smartmoney_scorer::{effective_threshold, Scorer, ScorerEvent};
+use smartmoney_scorer::{effective_threshold, is_alert, Scorer, ScorerEvent};
 use smartmoney_store::Store;
 use tokio::sync::{mpsc, watch};
 use tracing_subscriber::EnvFilter;
@@ -199,7 +199,13 @@ async fn main() -> anyhow::Result<()> {
                                 s.title.as_deref().unwrap_or("?"),
                                 s.proxy_wallet,
                             );
-                            if total >= threshold {
+                            if is_alert(
+                                total,
+                                s.price_asymmetry,
+                                s.cluster_bonus,
+                                threshold,
+                                &scoring,
+                            ) {
                                 tracing::warn!("ALERT {line}");
                                 if let Some(bot) = &bot {
                                     bot.notify_alert(&s).await;

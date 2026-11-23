@@ -159,7 +159,13 @@ impl Scorer {
                 } => match self.score_trade(trade_id).await {
                     Ok(Some((score_id, b))) => {
                         let threshold = self.alert_threshold().await;
-                        if b.total >= threshold {
+                        if is_alert(
+                            b.total,
+                            b.price_asymmetry,
+                            b.cluster_bonus,
+                            threshold,
+                            &self.cfg,
+                        ) {
                             tracing::info!(trade_id, score = b.total, "high score");
                         } else {
                             tracing::debug!(trade_id, score = b.total, "scored");
@@ -192,6 +198,34 @@ impl Scorer {
 }
 
 /// Alert threshold: runtime override from `kv_state`, else the config value.
+/// Whether a score carries directional insider evidence rather than
+/// mere conspicuousness.
+///
+/// Wallet freshness (25) + relative size (20) + a niche category (15)
+/// add up to exactly the default alert threshold of 60, so a new wallet
+/// making one large trade in a thin niche market alerted on its own.
+/// Live data from 2026-11-23: 97 of 120 alerts sat in the 60-64 band
+/// and only 43 had a longshot price or a cluster. Those two are the
+/// components that say somebody may know something, as opposed to
+/// something merely being unusual, so an alert now requires one of
+/// them (`ScoringConfig::alert_requires_marker`).
+pub fn has_insider_marker(price_asymmetry: f64, cluster_bonus: f64) -> bool {
+    price_asymmetry > 0.0 || cluster_bonus > 0.0
+}
+
+/// The full alert rule: above the threshold and, unless switched off,
+/// carrying a marker.
+pub fn is_alert(
+    total: f64,
+    price_asymmetry: f64,
+    cluster_bonus: f64,
+    threshold: f64,
+    cfg: &ScoringConfig,
+) -> bool {
+    total >= threshold
+        && (!cfg.alert_requires_marker || has_insider_marker(price_asymmetry, cluster_bonus))
+}
+
 pub async fn effective_threshold(store: &Store, cfg: &ScoringConfig) -> f64 {
     match store.get_state(STATE_ALERT_THRESHOLD).await {
         Ok(Some(v)) => v.parse().unwrap_or(cfg.alert_threshold),
@@ -372,5 +406,28 @@ mod tests {
         assert!(got
             .iter()
             .any(|e| matches!(e, ScorerEvent::MarketResolved { .. })));
+    }
+
+    #[test]
+    fn alert_needs_directional_evidence() {
+        let cfg = ScoringConfig::default();
+        // The live false positive: fresh wallet (25) + relative size (20)
+        // + niche category (15) land exactly on the threshold without a
+        // longshot price or a cluster.
+        assert!(!is_alert(60.0, 0.0, 0.0, 60.0, &cfg));
+        // A longshot price is evidence, and so is a cluster.
+        assert!(is_alert(60.0, 8.0, 0.0, 60.0, &cfg));
+        assert!(is_alert(60.0, 0.0, 10.0, 60.0, &cfg));
+        // The threshold still has to be cleared.
+        assert!(!is_alert(59.9, 25.0, 10.0, 60.0, &cfg));
+        // Switching the requirement off restores the old behaviour.
+        let loose = ScoringConfig {
+            alert_requires_marker: false,
+            ..ScoringConfig::default()
+        };
+        assert!(is_alert(60.0, 0.0, 0.0, 60.0, &loose));
+
+        assert!(has_insider_marker(0.1, 0.0));
+        assert!(!has_insider_marker(0.0, 0.0));
     }
 }

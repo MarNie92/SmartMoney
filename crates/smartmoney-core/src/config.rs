@@ -143,6 +143,10 @@ impl Default for ScoreWeights {
 pub struct ScoringConfig {
     /// Alerts are sent for scores at or above this value.
     pub alert_threshold: f64,
+    /// Require a longshot price or a wallet cluster for an alert, not
+    /// just a high score. Freshness + size + category alone reach the
+    /// threshold, which made most alerts mere conspicuousness.
+    pub alert_requires_marker: bool,
     /// How the market type enters the score.
     pub mode: ScoreMode,
     pub weights: ScoreWeights,
@@ -186,6 +190,7 @@ impl Default for ScoringConfig {
         ]);
         Self {
             alert_threshold: 60.0,
+            alert_requires_marker: true,
             mode: ScoreMode::Additive,
             weights: ScoreWeights::default(),
             fresh_full_age_days: 7.0,

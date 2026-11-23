@@ -100,6 +100,27 @@ scores; the backfill only scores trades that have no score row, so a
 version bump deliberately does not rescore (that would re-alert
 history over Telegram).
 
+## Alert rule 2026-11-23: a marker is required
+
+After the v2 score fix the alerts clustered again, now at 60-64 (97 of
+120) and three quarters in one category. Checked the obvious suspect
+first: market age. It was wrong. The alerted markets had a median age
+of 26.7 days, several 280-496 days (2028 election markets), so
+"brand-new market" does not explain it. The common factor is thin
+24 h volume, of which youth is only one cause.
+
+The real defect is the same arithmetic as before: wallet freshness
+(25) + relative size (20) + a niche category (15) equal the alert
+threshold of 60, so three weak signals reach the bar on their own.
+Fix: an alert additionally needs a longshot price or a wallet cluster,
+the two components that encode "somebody may know something" rather
+than "something is unusual".  and
+, switchable via
+, applied by the daemon, the
+scorer log and the dashboard so all three agree. On the live sample
+this cuts 120 alerts over 8 days to 43 (about 5 a day). No schema
+change: the components were already stored.
+
 ## De-vig test and anchor2 retirement (2026-11-23)
 
 The live anchor2 run lost 25.9 % over 24 settled bets, with every
