@@ -155,6 +155,27 @@ timer 03:30 UTC keeping seven archives. Dashboard binds to the
 Tailscale address only; no public port but SSH. Setup steps and
 everyday commands: `docs/DEPLOY.md`.
 
+## Mechanical arbitrage: closed (2026-11-24)
+
+Two checks, both negative, so neither needs repeating.
+
+Multi-outcome sums: in weather bucket events exactly one bucket wins,
+so the YES prices must sum to 1. Across six active events buying every
+YES costs 1.008-1.010 and selling every YES brings 0.987-0.999. No gap
+in either direction; the ~1 point on each side is the market makers
+wage, which is where the bot profit in the wallet profile comes from.
+
+Deadline ladders: 797 open events scanned, 52 ladders, 45 checked
+against live books. Genuine violations after fees: zero. Two rounds of
+false positives are worth remembering, because both looked like money:
+(1) survival markets ("ceasefire continues through <date>") run the
+other way, a later date is LESS likely, which produced nine fake
+arbitrages worth up to 27 points; (2) ladders whose rungs are numeric
+thresholds ("Math Arena score 1575 / 1600") parse as years but order
+like survival markets, a higher threshold being harder. The scanner
+must classify the direction of the implication per event before
+comparing anything (scratchpad ladders2.js).
+
 ## Next session: favorites98 interim review (~2026-12-07)
 
 Agreed on 2026-11-24 to leave the running measurement alone for two
