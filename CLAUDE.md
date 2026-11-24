@@ -153,8 +153,24 @@ three availability domains: AD-1 was full, AD-2 free. systemd unit
 `/etc/smartmoney/smartmoney.env` (640 root:smartmoney), nightly backup
 timer 03:30 UTC keeping seven archives. Dashboard binds to the
 Tailscale address only; no public port but SSH. Setup steps and
-everyday commands: `docs/DEPLOY.md`. The user wants the project renamed
-to OddsHunter after their holiday (2026-11-16 to ~11-23).
+everyday commands: `docs/DEPLOY.md`.
+
+## Next session: favorites98 interim review (~2026-12-07)
+
+Agreed on 2026-11-24 to leave the running measurement alone for two
+weeks and then take stock. Nothing should be changed in the meantime:
+every change to a live experiment costs comparability.
+
+State at the pause: favorites98 open with 158 positions and one
+settled, cash $134k of $150k, horizons 7-76 days (mean 26.6), entry
+prices around 97c. The oldest entries are from 2026-11-15, so a first
+wave of settlements is due during these two weeks; expect roughly
+30-60 settled by the review, well short of the pre-registered 100, so
+read it as a direction, not a verdict. anchor2 is retired with two
+positions still running out. Alerts run at about 5 a day under the
+marker rule. Still open from before the holiday: the user wants the
+project renamed from SmartMoney to OddsHunter (repo, crates, service,
+paths, database) — a flat rename plus a redeploy.
 
 ## Current status
 
